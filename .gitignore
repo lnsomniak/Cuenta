@@ -1,0 +1,16 @@
+node_modules/
+venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+.next/
+build/
+dist/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+*.log
+# basically a list for me to know 

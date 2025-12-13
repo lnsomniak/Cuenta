@@ -1,0 +1,245 @@
+import pulp
+from typing import Optional
+from dataclasses import dataclass
+from pydantic import BaseModel, Field
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pulp import LpMaximize, LpProblem, LpVariable, lpSum, LpStatus, value
+
+# Suppress solver output
+pulp.LpSolverDefault.msg = 0
+
+app = FastAPI(
+    title="Fit-Econ API",
+    description="Grocery optimization for fitness goals",
+    version="0.1.0"
+)
+
+# CORS - Allow all origins for local development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,  # Must be False when using "*"
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
+
+@dataclass
+class Product:
+    id: str
+    name: str
+    price: float
+    calories: int
+    protein: float
+    carbs: float
+    fat: float
+    servings: float
+    category: str
+    
+    @property
+    def total_calories(self) -> int:
+        return int(self.calories * self.servings)
+    
+    @property
+    def total_protein(self) -> float:
+        return self.protein * self.servings
+    
+    @property
+    def protein_per_dollar(self) -> float:
+        return self.total_protein / self.price if self.price > 0 else 0
+
+
+class OptimizeRequest(BaseModel):
+    budget: float = Field(default=75.0, ge=20, le=500)
+    daily_calories: int = Field(default=2000, ge=1200, le=5000)
+    daily_protein: Optional[int] = Field(default=150, ge=50, le=400)
+    max_per_product: int = Field(default=3, ge=1, le=10)
+
+# mock data, should be same as seed.sql
+
+PRODUCTS = [
+    Product("1", "Kirkwood Chicken Breast (3 lb)", 8.99, 120, 26, 0, 1.5, 12, "Protein"),
+    Product("2", "Kirkwood Chicken Thighs (3 lb)", 5.99, 180, 22, 0, 10, 12, "Protein"),
+    Product("3", "Never Any! Ground Turkey 93/7", 5.49, 170, 21, 0, 9, 4, "Protein"),
+    Product("4", "Fresh Ground Beef 80/20", 5.99, 290, 19, 0, 23, 4, "Protein"),
+    Product("5", "Fresh Ground Beef 93/7", 6.99, 170, 22, 0, 9, 4, "Protein"),
+    Product("6", "Fremont Fish Market Tilapia (2 lb)", 7.99, 110, 23, 0, 2, 8, "Protein"),
+    Product("7", "Fremont Fish Market Salmon", 8.99, 180, 25, 0, 8, 4, "Protein"),
+    Product("8", "Appleton Farms Bacon (16 oz)", 5.49, 80, 6, 0, 6, 16, "Protein"),
+    Product("9", "Goldhen Large Eggs (18 ct)", 3.29, 70, 6, 0, 5, 18, "Dairy"),
+    Product("10", "Goldhen Large Eggs (36 ct)", 5.99, 70, 6, 0, 5, 36, "Dairy"),
+    Product("11", "Friendly Farms Greek Yogurt (32 oz)", 4.49, 100, 17, 6, 0, 4, "Dairy"),
+    Product("12", "Friendly Farms Cottage Cheese (24 oz)", 2.99, 110, 13, 5, 4, 6, "Dairy"),
+    Product("13", "Happy Farms String Cheese (24 ct)", 6.99, 80, 7, 1, 6, 24, "Dairy"),
+    Product("14", "Friendly Farms Whole Milk (gallon)", 3.49, 150, 8, 12, 8, 16, "Dairy"),
+    Product("15", "Simply Nature Brown Rice (2 lb)", 3.29, 170, 4, 35, 1.5, 18, "Grains"),
+    Product("16", "Jasmine Rice (5 lb)", 5.99, 160, 3, 36, 0, 45, "Grains"),
+    Product("17", "Barilla Pasta (16 oz)", 1.29, 200, 7, 42, 1, 8, "Grains"),
+    Product("18", "L'Oven Fresh Whole Wheat Bread", 1.99, 70, 4, 13, 1, 20, "Grains"),
+    Product("19", "Millville Old Fashioned Oats (42 oz)", 2.99, 150, 5, 27, 3, 30, "Grains"),
+    Product("20", "Tortillas Flour (10 ct)", 2.29, 140, 3, 24, 3, 10, "Grains"),
+    Product("21", "Bananas (bunch)", 1.49, 105, 1, 27, 0, 7, "Produce"),
+    Product("22", "Sweet Potatoes (3 lb bag)", 2.99, 112, 2, 26, 0, 5, "Produce"),
+    Product("23", "Russet Potatoes (5 lb bag)", 2.99, 160, 4, 37, 0, 8, "Produce"),
+    Product("24", "Baby Spinach (16 oz)", 3.99, 7, 1, 1, 0, 16, "Produce"),
+    Product("25", "Broccoli Crowns (per lb)", 1.69, 55, 4, 11, 0, 3, "Produce"),
+    Product("26", "Frozen Broccoli (12 oz)", 1.29, 30, 3, 6, 0, 3, "Produce"),
+    Product("27", "Frozen Mixed Vegetables (12 oz)", 1.19, 60, 2, 12, 0, 3, "Produce"),
+    Product("28", "Avocados (each)", 0.89, 234, 3, 12, 21, 1, "Produce"),
+    Product("29", "Dakota's Pride Black Beans (15 oz)", 0.79, 110, 7, 20, 0, 3.5, "Legumes"),
+    Product("30", "Dakota's Pride Pinto Beans (15 oz)", 0.79, 110, 6, 20, 0, 3.5, "Legumes"),
+    Product("31", "Dakota's Pride Chickpeas (15 oz)", 0.89, 120, 6, 20, 2, 3.5, "Legumes"),
+    Product("32", "Simply Nature Lentils (16 oz)", 2.49, 170, 12, 30, 0, 13, "Legumes"),
+    Product("33", "Southern Grove Peanut Butter (28 oz)", 3.49, 190, 7, 7, 16, 26, "Legumes"),
+    Product("34", "Simply Nature Organic Tofu (14 oz)", 2.29, 90, 10, 2, 5, 4.5, "Legumes"),
+    Product("35", "Elevation Protein Bars (5 ct)", 5.99, 200, 20, 22, 7, 5, "Snacks"),
+    Product("36", "Southern Grove Almonds (16 oz)", 5.99, 170, 6, 6, 15, 16, "Snacks"),
+    Product("37", "SimplyNature Almond Milk (64 oz)", 2.79, 30, 1, 1, 2.5, 8, "Dairy"),
+]
+# followed by more logic to futher optimize
+def calculate_fitness_score(product: Product) -> float:
+    protein_score = min(product.protein_per_dollar * 2, 50)
+    cal_per_dollar = product.total_calories / product.price
+    calorie_score = min(cal_per_dollar / 50, 20)
+    bonuses = {"Protein": 30, "Dairy": 20, "Legumes": 25, "Grains": 15, "Produce": 10, "Snacks": 5}
+    category_score = bonuses.get(product.category, 10)
+    return protein_score + calorie_score + category_score
+
+def get_selection_reason(product: Product, score: float) -> str:
+    if product.protein_per_dollar > 10:
+        return f"Exceptional protein value ({product.protein_per_dollar:.1f}g/$)"
+    elif product.protein_per_dollar > 5:
+        return f"Strong protein/$ ratio ({product.protein_per_dollar:.1f}g/$)"
+    elif product.category == "Produce":
+        return "Essential micronutrients & fiber"
+    elif product.category == "Grains":
+        return "Cost-effective energy source"
+    elif product.category == "Dairy":
+        return "Complete protein + calcium"
+    else:
+        return f"Good overall value (score: {score:.0f})"
+
+def run_optimization(budget: float, daily_calories: int, daily_protein: int, max_per_product: int):
+    weekly_calories = daily_calories * 7
+    weekly_protein = daily_protein * 7
+    
+    scores = {p.id: calculate_fitness_score(p) for p in PRODUCTS}
+    
+    prob = LpProblem("GroceryOptimization", LpMaximize)
+    qty = {p.id: LpVariable(f"qty_{p.id}", lowBound=0, upBound=max_per_product, cat="Integer") for p in PRODUCTS}
+    
+    prob += lpSum(qty[p.id] * p.total_protein * (scores[p.id] / 100) for p in PRODUCTS)
+    
+    # Constraints
+    prob += lpSum(qty[p.id] * p.price for p in PRODUCTS) <= budget
+    prob += lpSum(qty[p.id] * p.total_calories for p in PRODUCTS) >= weekly_calories * 0.9
+    prob += lpSum(qty[p.id] * p.total_calories for p in PRODUCTS) <= weekly_calories * 1.2
+    prob += lpSum(qty[p.id] * p.total_protein for p in PRODUCTS) >= weekly_protein * 0.8
+    
+    # Variety
+    has = {p.id: LpVariable(f"has_{p.id}", cat="Binary") for p in PRODUCTS}
+    for p in PRODUCTS:
+        prob += qty[p.id] <= max_per_product * has[p.id]
+    prob += lpSum(has.values()) >= 5
+    
+    prob.solve()
+    
+    if LpStatus[prob.status] != "Optimal":
+        return None, LpStatus[prob.status]
+    
+    items = []
+    total_cost = 0
+    total_protein = 0
+    total_calories = 0
+    
+    for p in PRODUCTS:
+        q = int(value(qty[p.id]) or 0)
+        if q > 0:
+            score = scores[p.id]
+            items.append({
+                "id": p.id,
+                "name": p.name,
+                "quantity": q,
+                "unit_price": p.price,
+                "total_price": round(p.price * q, 2),
+                "protein_per_item": round(p.total_protein, 1),
+                "total_protein": round(p.total_protein * q, 1),
+                "calories_per_item": p.total_calories,
+                "total_calories": p.total_calories * q,
+                "fitness_score": round(score, 1),
+                "reason": get_selection_reason(p, score),
+                "category": p.category,
+            })
+            total_cost += p.price * q
+            total_protein += p.total_protein * q
+            total_calories += p.total_calories * q
+    
+    items.sort(key=lambda x: x["fitness_score"], reverse=True)
+    
+    return {
+        "success": True,
+        "status": "Optimal solution found",
+        "summary": {
+            "total_cost": round(total_cost, 2),
+            "total_protein": round(total_protein, 1),
+            "total_calories": total_calories,
+            "budget": budget,
+            "calorie_target": weekly_calories,
+            "budget_utilization": f"{(total_cost / budget * 100):.1f}%",
+            "calorie_achievement": f"{(total_calories / weekly_calories * 100):.1f}%",
+        },
+        "items": items
+    }, "Optimal"
+# endpoints and messages for myself
+@app.get("/")
+async def root():
+    return {"message": "Fit-Econ API is running", "docs": "/docs"}
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "version": "0.1.0", "mode": "mock_data"}
+
+@app.post("/api/optimize")
+async def optimize(request: OptimizeRequest):
+    result, status = run_optimization(
+        budget=request.budget,
+        daily_calories=request.daily_calories,
+        daily_protein=request.daily_protein or 150,
+        max_per_product=request.max_per_product
+    )
+    
+    if result is None:
+        raise HTTPException(status_code=400, detail=f"Optimization failed: {status}")
+    
+    return result
+
+@app.get("/api/products")
+async def list_products():
+    return {
+        "count": len(PRODUCTS),
+        "products": sorted(
+            [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "price": p.price,
+                    "calories": p.calories,
+                    "protein": p.protein,
+                    "protein_per_dollar": round(p.protein_per_dollar, 2),
+                    "category": p.category,
+                }
+                for p in PRODUCTS
+            ],
+            key=lambda x: x["protein_per_dollar"],
+            reverse=True
+        )
+    }
+# test cases 
+if __name__ == "__main__":
+    import uvicorn
+    print("\n🚀 Starting Fit-Econ API (Mock Data Mode)")
+    print("   http://localhost:8000")
+    print("   http://localhost:8000/docs (Swagger UI)")
+    print("\n   Press Ctrl+C to stop\n")
+    uvicorn.run(app, host="127.0.0.1", port=8000)
