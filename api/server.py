@@ -1,13 +1,20 @@
+import os
 import pulp
-from typing import Optional
+import httpx
+from typing import Optional, cast
+from dotenv import load_dotenv
 from dataclasses import dataclass
 from pydantic import BaseModel, Field
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pulp import LpMaximize, LpProblem, LpVariable, lpSum, LpStatus, value
+from pulp import LpMaximize, LpProblem, LpVariable, lpSum, LpStatus, value as lp_value # ez fix but not so easy fix to lines 36 and 168
+
+load_dotenv()
+SPOONACULAR_KEY = os.getenv("SPOONACULAR_API_KEY")
 
 # Suppress solver output
-pulp.LpSolverDefault.msg = 0
+if pulp.LpSolverDefault is not None:
+    pulp.LpSolverDefault.msg = False
 
 app = FastAPI(
     title="Fit-Econ API",
@@ -24,6 +31,12 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+# safely extracts integer value from LP variable, let it be known sonarqube I HATE YOU. 
+def get_qty(var: LpVariable) -> int:
+    val = lp_value(var)
+    if val is None:
+        return 0
+    return int(cast(float, val))
 
 @dataclass
 class Product:
@@ -154,7 +167,7 @@ def run_optimization(budget: float, daily_calories: int, daily_protein: int, max
     total_calories = 0
     
     for p in PRODUCTS:
-        q = int(value(qty[p.id]) or 0)
+        q = get_qty(qty[p.id])
         if q > 0:
             score = scores[p.id]
             items.append({
@@ -235,6 +248,79 @@ async def list_products():
             reverse=True
         )
     }
+    
+@app.get("/api/recipes/from-ingredients")
+async def recipes_from_ingredients(
+    ingredients: list[str] = Query(default=[]),
+    number: int = Query(default=5, ge=1, le=10)
+):
+    if not SPOONACULAR_KEY:
+        raise HTTPException(status_code=500, detail="SPOONACULAR_API_KEY not set in .env")
+    
+    if not ingredients:
+        raise HTTPException(status_code=400, detail="No ingredients provided")
+# edge cases thank you codepath ily 
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://api.spoonacular.com/recipes/findByIngredients",
+            params={
+                "ingredients": ",".join(ingredients),
+                "number": number,
+                "ranking": 2,
+                "apiKey": SPOONACULAR_KEY
+            }
+        )
+        data = resp.json()
+    
+    return {
+        "ingredients": ingredients,
+        "count": len(data),
+        "recipes": [
+            {
+                "id": r["id"],
+                "title": r["title"],
+                "image": r.get("image"),
+                "usedIngredients": [i["name"] for i in r.get("usedIngredients", [])],
+                "missedIngredients": [i["name"] for i in r.get("missedIngredients", [])],
+            }
+            for r in data
+        ]
+    }
+
+
+@app.get("/api/recipes/search")
+async def search_recipes(
+    query: str,
+    number: int = Query(default=5, ge=1, le=10)
+):
+    if not SPOONACULAR_KEY:
+        raise HTTPException(status_code=500, detail="SPOONACULAR_API_KEY not set in .env")#
+# search recipes feature, amazing but weird to implement? I love spoonacular  
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://api.spoonacular.com/recipes/complexSearch",
+            params={
+                "query": query,
+                "number": number,
+                "addRecipeNutrition": True,
+                "apiKey": SPOONACULAR_KEY
+            }
+        )
+        data = resp.json()
+    
+    results = []
+    for r in data.get("results", []):
+        nutrition = r.get("nutrition", {})
+        nutrients = {n["name"]: n["amount"] for n in nutrition.get("nutrients", [])}
+        results.append({
+            "id": r["id"],
+            "title": r["title"],
+            "image": r.get("image"),
+            "calories": round(nutrients.get("Calories", 0)),
+            "protein": round(nutrients.get("Protein", 0)),
+        })
+    
+    return {"query": query, "count": len(results), "recipes": results}
 # test cases 
 if __name__ == "__main__":
     import uvicorn
@@ -242,4 +328,4 @@ if __name__ == "__main__":
     print("   http://localhost:8000")
     print("   http://localhost:8000/docs (Swagger UI)")
     print("\n   Press Ctrl+C to stop\n")
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True) # needed to add reload TRUE 

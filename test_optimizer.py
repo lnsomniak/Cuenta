@@ -1,10 +1,13 @@
+from typing import cast
 from dataclasses import dataclass
 from pulp import LpMaximize, LpProblem, LpVariable, lpSum, LpStatus, value as lp_value
 # this is my removal of the need for a database for now, just hardcoded logic 
 
 def get_qty(var: LpVariable) -> int:
     val = lp_value(var)
-    return int(val) if val is not None else 0 # done trying to fix this it works leave me alone. 
+    if val is None:
+        return 0
+    return int(cast(float, val)) # done trying to fix this it works leave me alone. 
 
 @dataclass
 class Product:

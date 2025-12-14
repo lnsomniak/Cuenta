@@ -8,117 +8,64 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- ============================================================================
 -- PRODUCTS TABLE (ALDI inventory)
 -- ============================================================================
-CREATE TABLE IF NOT EXISTS products (
+-- Recipes cached from API
+CREATE TABLE recipes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    spoonacular_id INTEGER UNIQUE,
     name TEXT NOT NULL,
-    price DECIMAL(10,2) NOT NULL,
-    
-    calories INTEGER NOT NULL DEFAULT 0,
-    protein DECIMAL(10,1) NOT NULL DEFAULT 0,
-    carbs DECIMAL(10,1) NOT NULL DEFAULT 0,
-    fat DECIMAL(10,1) NOT NULL DEFAULT 0,
-    fiber DECIMAL(10,1) DEFAULT 0,
-    
-    -- Serving info
-    serving_size TEXT,
-    servings_per_container DECIMAL(10,1) DEFAULT 1,
-    
-    -- Computed efficiency scores (for quick sorting)
-    protein_per_dollar DECIMAL(10,2) GENERATED ALWAYS AS (
-        CASE WHEN price > 0 THEN (protein * servings_per_container) / price ELSE 0 END
-    ) STORED,
-    calories_per_dollar DECIMAL(10,2) GENERATED ALWAYS AS (
-        CASE WHEN price > 0 THEN (calories * servings_per_container) / price ELSE 0 END
-    ) STORED,
-    
-    -- Metadata
-    category TEXT,
-    store TEXT DEFAULT 'ALDI',
-    in_stock BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
---- BORING Stuff but creatiung user tables, this entire thing is boring I can see the sunrise
-CREATE TABLE IF NOT EXISTS profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    email TEXT,
-    display_name TEXT,
-    
-    -- Goals
-    weekly_budget DECIMAL(10,2) DEFAULT 75.00,
-    daily_calories INTEGER DEFAULT 2000,
-    protein_goal INTEGER DEFAULT 150,  -- grams per day
-    
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    image_url TEXT,
+    prep_minutes INTEGER,
+    servings INTEGER,
+    calories_per_serving INTEGER,
+    protein_per_serving FLOAT,
+    carbs_per_serving FLOAT,
+    fat_per_serving FLOAT,
+    cost_per_serving FLOAT,
+    cached_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ============================================================================
--- OPTIMIZED BASKETS
--- ============================================================================
-CREATE TABLE IF NOT EXISTS baskets (
+-- Recipe ingredients mapped to our products
+CREATE TABLE recipe_ingredients (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-    
-    -- Input parameters (what was requested)
-    budget DECIMAL(10,2) NOT NULL,
-    calorie_target INTEGER NOT NULL,
-    protein_target INTEGER,
-    
-    -- Output summary
-    total_cost DECIMAL(10,2),
-    total_calories INTEGER,
-    total_protein DECIMAL(10,1),
-    
-    -- Status
-    status TEXT DEFAULT 'pending',  -- pending, optimizing, complete, failed
-    
+    recipe_id UUID REFERENCES recipes(id) ON DELETE CASCADE,
+    product_id UUID REFERENCES products(id),  -- nullable if no ALDI match
+    ingredient_name TEXT NOT NULL,            -- original from API
+    quantity FLOAT,
+    unit TEXT
+);
+
+-- User's saved meal plans
+CREATE TABLE meal_plans (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    week_start DATE NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ============================================================================
--- BASKET ITEMS (products in each basket)
--- ============================================================================
-CREATE TABLE IF NOT EXISTS basket_items (
+CREATE TABLE meal_plan_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    basket_id UUID NOT NULL REFERENCES baskets(id) ON DELETE CASCADE,
-    product_id UUID NOT NULL REFERENCES products(id),
-    
-    quantity INTEGER NOT NULL DEFAULT 1,
-    
-    -- Snapshot of product data at time of optimization
-    unit_price DECIMAL(10,2) NOT NULL,
-    total_price DECIMAL(10,2) GENERATED ALWAYS AS (unit_price * quantity) STORED,
-    
-    -- Why this item was chosen (for UI explanation)
-    fitness_score DECIMAL(10,2),  -- XGBoost output
-    selection_reason TEXT,         -- "High protein/$ ratio", "Budget filler", etc.
-    
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    meal_plan_id UUID REFERENCES meal_plans(id) ON DELETE CASCADE,
+    recipe_id UUID REFERENCES recipes(id),
+    day_of_week INTEGER CHECK (day_of_week BETWEEN 0 AND 6),
+    meal_type TEXT CHECK (meal_type IN ('breakfast', 'lunch', 'dinner', 'snack'))
 );
 
 -- ============================================================================
 -- ROW LEVEL SECURITY AS A MEASURE THAT WILL GET IMPLEMENTED. 
 -- ============================================================================
+-- RLS policies
+ALTER TABLE recipes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Recipes are public" ON recipes FOR SELECT USING (true);
 
--- Products: Everyone can read (it's a product catalog)
-ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Anyone can view products" ON products FOR SELECT USING (true);
+ALTER TABLE meal_plans ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users own their meal plans" ON meal_plans 
+    FOR ALL USING (auth.uid() = user_id);
 
--- Profiles: Users only see their own
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users manage own profile" ON profiles FOR ALL USING (auth.uid() = id);
-
--- Baskets: Users only see their own
-ALTER TABLE baskets ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users manage own baskets" ON baskets FOR ALL USING (auth.uid() = user_id);
-
--- Basket Items: Access via parent basket
-ALTER TABLE basket_items ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users access own basket items" ON basket_items FOR ALL 
-USING (EXISTS (
-    SELECT 1 FROM baskets WHERE baskets.id = basket_items.basket_id AND baskets.user_id = auth.uid()
-));
+ALTER TABLE meal_plan_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users access their meal plan items" ON meal_plan_items
+    FOR ALL USING (
+        meal_plan_id IN (SELECT id FROM meal_plans WHERE user_id = auth.uid())
+    );
 
 -- ============================================================================
 -- INDEXES

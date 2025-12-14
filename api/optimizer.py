@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING, cast
 import os
 from dotenv import load_dotenv
 from pulp import (
@@ -146,7 +146,7 @@ class OptimizationEngine:
         response = (
             self.client.table("products").select("*").eq("in_stock", True).execute()
         )
-        return [_parse_product(row) for row in response.data]
+        return [_parse_product(cast(dict[str, Any], row)) for row in response.data]
 # Let it be known this is only test, the real version would be actually so much better with XG boost
     def calculate_fitness_score(self, product: Product) -> float:
         # Protein efficiency is the most important (0-50 points)
@@ -301,7 +301,7 @@ class OptimizationEngine:
         total_calories = 0
 
         for p in products:
-            qty = int(lp_value(product_vars[p.id]) or 0)
+            qty = int(lp_value(product_vars[p.id]) or 0) # type: ignore[arg-type]
             if qty > 0:
                 score = scores[p.id]
                 item = BasketItem(
