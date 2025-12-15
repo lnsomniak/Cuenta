@@ -189,7 +189,6 @@ class OptimizationEngine:
         total_cost = 0
         total_protein = 0
         total_calories = 0
-         
         for p in self.products:
             q = get_qty(qty[p.id])
             if q > 0:

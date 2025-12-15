@@ -1,22 +1,19 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-
-const inter = Inter({ subsets: ["latin"] });
-
+import type { Metadata } from 'next'
+import './globals.css'
+// so THIS is why my railway wasn't working. 
 export const metadata: Metadata = {
-  title: "Cuenta | Smart Grocery Optimization",
-  description: "AI-optimized grocery lists for your fitness goals",
-};
+  title: 'Cuenta - Grocery Intelligence',
+  description: 'Options, not decisions. Optimize your grocery shopping with protein efficiency metrics.',
+}
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>{children}</body>
+      <body>{children}</body>
     </html>
-  );
+  )
 }
