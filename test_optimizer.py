@@ -115,9 +115,9 @@ def main():
     daily_protein = 150
     
     print("\n" + "=" * 70)
-    print("🛒 FIT-ECON OPTIMIZER TEST")
+    print("🛒 CUENTA OPTIMIZER TEST")
     print("=" * 70)
-    print(f"\n📋 Input Parameters:") 
+    print("\n📋 Input Parameters:") 
     print(f"   Budget:         ${budget:.2f}/week")
     print(f"   Calorie Target: {daily_calories}/day ({daily_calories * 7:,}/week)")
     print(f"   Protein Target: {daily_protein}g/day ({daily_protein * 7:,}g/week)")
@@ -155,7 +155,7 @@ def main():
     print("📊 RESULTS")
     print("=" * 70)
     
-    print(f"\n💰 Summary:")
+    print("\n💰 Summary:")
     print(f"   Total Cost:     ${total_cost:.2f} ({total_cost/budget*100:.1f}% of budget)")
     print(f"   Total Protein:  {total_protein:.0f}g/week ({total_protein/7:.0f}g/day)")
     print(f"   Total Calories: {total_calories:,}/week ({total_calories//7:,}/day)")

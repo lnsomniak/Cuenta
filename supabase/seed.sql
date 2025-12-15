@@ -1,5 +1,5 @@
 -- ============================================================================
--- FIT-ECON MVP: Seed Data
+-- CUENTA MVP: Seed Data
 -- ============================================================================
 -- Realistic ALDI products with actual-ish nutritional data
 -- Ran AFTER schema.sql my god why do i forget.

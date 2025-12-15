@@ -5,7 +5,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Fit-Econ | Smart Grocery Optimization",
+  title: "Cuenta | Smart Grocery Optimization",
   description: "AI-optimized grocery lists for your fitness goals",
 };
 

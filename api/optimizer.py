@@ -1,21 +1,14 @@
-from __future__ import annotations
-from dataclasses import dataclass
-from typing import Any, Optional, TYPE_CHECKING, cast
-import os
-from dotenv import load_dotenv
-from pulp import (
-    LpMaximize,
-    LpProblem,
-    LpStatus,
-    LpVariable,
-    lpSum,
-    value as lp_value,
-)
-# I cannot wait to get rid of pulp so much unncesscary things I'd rather work with ANY tree model engine. 
-if TYPE_CHECKING:
-    from supabase import Client
+from typing import cast, Optional
+from dataclasses import dataclass, field
+from pulp import LpMaximize, LpProblem, LpVariable, lpSum, LpStatus, value as lp_value, PULP_CBC_CMD
 
-load_dotenv()
+
+def get_qty(var: LpVariable) -> int:
+    val = lp_value(var)
+    if val is None:
+        return 0
+    return int(cast(float, val))
+
 
 @dataclass
 class Product:
@@ -24,353 +17,267 @@ class Product:
     price: float
     calories: int
     protein: float
-    carbs: float
-    fat: float
-    servings_per_container: float
-    protein_per_dollar: float
+    servings: float
     category: str
-
+    
     @property
     def total_calories(self) -> int:
-        return int(self.calories * self.servings_per_container)
-
+        return int(self.calories * self.servings)
+    
     @property
     def total_protein(self) -> float:
-        return self.protein * self.servings_per_container
-
-
-@dataclass
-class BasketItem:
-    product: Product
-    quantity: int
-    fitness_score: float
-    selection_reason: str
-
+        return self.protein * self.servings
+    
     @property
-    def total_price(self) -> float:
-        return self.product.price * self.quantity
-
+    def protein_per_dollar(self) -> float:
+        return self.total_protein / self.price if self.price > 0 else 0
+    
     @property
-    def total_protein(self) -> float:
-        return self.product.total_protein * self.quantity
+    def protein_per_100cal(self) -> float:
+        return (self.total_protein / self.total_calories * 100) if self.total_calories > 0 else 0
 
-    @property
-    def total_calories(self) -> int:
-        return self.product.total_calories * self.quantity
 
-# results of everything above
 @dataclass
 class OptimizationResult:
     success: bool
-    items: list[BasketItem]
-    total_cost: float
-    total_protein: float
-    total_calories: int
-    budget: float
-    calorie_target: int
     status: str
-
-    def to_dict(self) -> dict[str, Any]:
+    summary: dict = field(default_factory=dict)
+    items: list = field(default_factory=list)
+    
+    def to_dict(self) -> dict:
         return {
             "success": self.success,
             "status": self.status,
-            "summary": {
-                "total_cost": round(self.total_cost, 2),
-                "total_protein": round(self.total_protein, 1),
-                "total_calories": self.total_calories,
-                "budget": self.budget,
-                "calorie_target": self.calorie_target,
-                "budget_utilization": f"{(self.total_cost / self.budget * 100):.1f}%",
-                "calorie_achievement": f"{(self.total_calories / self.calorie_target * 100):.1f}%",
-            },
-            "items": [
-                {
-                    "id": item.product.id,
-                    "name": item.product.name,
-                    "quantity": item.quantity,
-                    "unit_price": item.product.price,
-                    "total_price": round(item.total_price, 2),
-                    "protein_per_item": round(item.product.total_protein, 1),
-                    "total_protein": round(item.total_protein, 1),
-                    "calories_per_item": item.product.total_calories,
-                    "total_calories": item.total_calories,
-                    "fitness_score": round(item.fitness_score, 1),
-                    "reason": item.selection_reason,
-                    "category": item.product.category,
-                }
-                for item in sorted(self.items, key=lambda x: x.fitness_score, reverse=True)
-            ],
+            "summary": self.summary,
+            "items": self.items
         }
 
-# telling it, parse a database row into a product with proper type handling pls!
-def _parse_product(row: dict[str, Any]) -> Product:
-    return Product(
-        id=str(row["id"]),
-        name=str(row["name"]),
-        price=float(row["price"]),
-        calories=int(row["calories"]),
-        protein=float(row["protein"]),
-        carbs=float(row["carbs"]),
-        fat=float(row["fat"]),
-        servings_per_container=float(row.get("servings_per_container") or 1),
-        protein_per_dollar=float(row.get("protein_per_dollar") or 0),
-        category=str(row.get("category") or "Other"),
-    )
 
-# main engine using linear programming to maximize protein while staying under budget, meeting minimum calorie req, and maintaining variety!
-class OptimizationEngine:
-    def __init__(
-        self,
-        supabase_url: Optional[str] = None,
-        supabase_key: Optional[str] = None,
-    ) -> None:
-        self.supabase_url = supabase_url or os.getenv("SUPABASE_URL")
-        self.supabase_key = supabase_key or os.getenv(
-            "SUPABASE_SERVICE_ROLE_KEY"
-        ) or os.getenv("SUPABASE_ANON_KEY")
-        self._client: Optional[Client] = None
+# Mock ALDI products with nutrition data
+PRODUCTS = [
+    # PROTEIN
+    Product("1", "Kirkwood Chicken Breast (3 lb)", 8.99, 120, 26, 12, "Protein"),
+    Product("2", "Kirkwood Chicken Thighs (3 lb)", 5.99, 180, 22, 12, "Protein"),
+    Product("3", "Never Any! Ground Turkey 93/7", 5.49, 170, 21, 4, "Protein"),
+    Product("4", "Fresh Ground Beef 80/20", 5.99, 290, 19, 4, "Protein"),
+    Product("5", "Fremont Fish Market Tilapia (2 lb)", 7.99, 110, 23, 8, "Protein"),
+    Product("6", "Salmon Fillets (1 lb)", 8.99, 208, 20, 4, "Protein"),
+    Product("7", "Fit & Active Canned Tuna (5 oz)", 0.99, 100, 25, 1, "Protein"),
+    
+    # DAIRY
+    Product("10", "Goldhen Large Eggs (18 ct)", 3.29, 70, 6, 18, "Dairy"),
+    Product("11", "Goldhen Large Eggs (36 ct)", 5.99, 70, 6, 36, "Dairy"),
+    Product("12", "Friendly Farms Greek Yogurt (32 oz)", 4.49, 100, 17, 4, "Dairy"),
+    Product("13", "Friendly Farms Cottage Cheese (24 oz)", 2.99, 110, 13, 6, "Dairy"),
+    Product("14", "Happy Farms String Cheese (24 ct)", 6.99, 80, 7, 24, "Dairy"),
+    Product("15", "Oikos Pro Yogurt Drink (7 oz)", 1.89, 140, 23, 1, "Dairy"),
+    Product("16", "Friendly Farms Milk 2% (1 gal)", 3.19, 120, 8, 16, "Dairy"),
+    
+    # GRAINS
+    Product("20", "Simply Nature Brown Rice (2 lb)", 3.29, 170, 4, 18, "Grains"),
+    Product("21", "Jasmine Rice (5 lb)", 5.99, 160, 3, 45, "Grains"),
+    Product("22", "Barilla Pasta (16 oz)", 1.29, 200, 7, 8, "Grains"),
+    Product("23", "Millville Old Fashioned Oats (42 oz)", 2.99, 150, 5, 30, "Grains"),
+    Product("24", "L'Oven Fresh Whole Wheat Bread", 1.49, 80, 4, 20, "Grains"),
+    Product("25", "Simply Nature Quinoa (16 oz)", 4.29, 160, 6, 10, "Grains"),
+    
+    # PRODUCE
+    Product("30", "Bananas (bunch ~3 lb)", 1.49, 105, 1, 7, "Produce"),
+    Product("31", "Sweet Potatoes (3 lb bag)", 2.99, 112, 2, 5, "Produce"),
+    Product("32", "Baby Spinach (16 oz)", 3.99, 7, 1, 16, "Produce"),
+    Product("33", "Frozen Broccoli (12 oz)", 1.29, 30, 3, 3, "Produce"),
+    Product("34", "Avocados (4 ct)", 3.29, 160, 2, 4, "Produce"),
+    
+    # LEGUMES
+    Product("40", "Dakota's Pride Black Beans (15 oz)", 0.79, 110, 7, 3.5, "Legumes"),
+    Product("41", "Dakota's Pride Chickpeas (15 oz)", 0.79, 110, 6, 3.5, "Legumes"),
+    Product("42", "Simply Nature Lentils (16 oz)", 2.49, 170, 12, 13, "Legumes"),
+    Product("43", "Southern Grove Peanut Butter (28 oz)", 3.49, 190, 7, 26, "Legumes"),
+    
+    # SNACKS
+    Product("50", "Elevation Protein Bars (5 ct)", 5.99, 200, 20, 5, "Snacks"),
+    Product("51", "Southern Grove Almonds (16 oz)", 5.99, 170, 6, 16, "Snacks"),
+    Product("52", "Simply Nature Almond Butter (12 oz)", 4.99, 190, 7, 12, "Snacks"),
+]
 
-    @property
-    def client(self) -> Client:
-        if self._client is None:
-            if not self.supabase_url or not self.supabase_key:
-                raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set")
-            # did you know you can put this here? yeah me either it probably isn't optimasl but vs isn't giving me an error
-            from supabase import create_client
 
-            self._client = create_client(self.supabase_url, self.supabase_key)
-        return self._client
-
+class OptimizationEngine:    
+    def __init__(self):
+        self.products = PRODUCTS
+    
     def fetch_products(self) -> list[Product]:
-        """Fetch all available products from database"""
-        response = (
-            self.client.table("products").select("*").eq("in_stock", True).execute()
-        )
-        return [_parse_product(cast(dict[str, Any], row)) for row in response.data]
-# Let it be known this is only test, the real version would be actually so much better with XG boost
-    def calculate_fitness_score(self, product: Product) -> float:
-        # Protein efficiency is the most important (0-50 points)
+        return self.products
+    
+    def _calculate_fitness_score(self, product: Product) -> float:
         protein_score = min(product.protein_per_dollar * 2, 50)
-
-        # Caloric density bonus for bulking (0-20 points)
-        calories_per_dollar = (
-            product.calories * product.servings_per_container
-        ) / max(product.price, 0.01)
-        calorie_score = min(calories_per_dollar / 50, 20)
-
-        # Category bonus (0-30 points)
-        category_bonuses = {
+        
+        protein_density_score = min(product.protein_per_100cal * 2, 20)
+        
+        bonuses = {
             "Protein": 30,
-            "Dairy": 20,
+            "Dairy": 20, 
             "Legumes": 25,
             "Grains": 15,
             "Produce": 10,
-            "Snacks": 5,
-            "Pantry": 5,
+            "Snacks": 5
         }
-        category_score = category_bonuses.get(product.category, 10)
-
-        return protein_score + calorie_score + category_score
-
-    def get_selection_reason(self, product: Product, score: float) -> str: 
-                            # Takes a product object(self, product:) and a floating-point score(Product, score:) as input and returns a string as output (-> str:) neat.
-        if product.protein_per_dollar > 10:
-            return f"Exceptional protein value ({product.protein_per_dollar:.1f}g/$)"
-        elif product.protein_per_dollar > 5:
-            return f"Strong protein/$ ratio ({product.protein_per_dollar:.1f}g/$)"
-        elif product.category == "Produce":
-            return "Essential micronutrients & fiber"
-        elif product.category == "Grains":
-            return "Cost-effective energy source"
-        elif product.category == "Dairy":
-            return "Complete protein + calcium"
-        else:
-            return f"Good overall value (score: {score:.0f})"
-
+        category_score = bonuses.get(product.category, 10)
+        
+        return protein_score + protein_density_score + category_score
+    
     def optimize(
         self,
-        budget: float,
-        calorie_target: int,
+        budget: float = 75.0,
+        calorie_target: int = 2000,
         protein_target: Optional[int] = None,
-        max_per_product: int = 3,
-        products: Optional[list[Product]] = None,
+        max_per_product: int = 3
     ) -> OptimizationResult:
-        # Fetch products if not provided
-        # Anytime I have to reorganize fetch i play with Mandy
-        if products is None:
-            products = self.fetch_products()
-
-        if not products:
-            return OptimizationResult(
-                success=False,
-                items=[],
-                total_cost=0,
-                total_protein=0,
-                total_calories=0,
-                budget=budget,
-                calorie_target=calorie_target * 7,
-                status="No products available",
-            )
-
-        # Weekly targets
+        if protein_target is None:
+            protein_target = 150  # Default reasonable target
+            
         weekly_calories = calorie_target * 7
-        weekly_protein = (protein_target or 150) * 7
-
+        weekly_protein = protein_target * 7
+        
         # Calculate fitness scores
-        scores = {p.id: self.calculate_fitness_score(p) for p in products}
-
-        # Create the optimization problem
-        prob = LpProblem("GroceryOptimization", LpMaximize)
-
-        # Decision variables: how many of each product to buy
-        product_vars = {
-            p.id: LpVariable(
-                f"qty_{p.id}", lowBound=0, upBound=max_per_product, cat="Integer"
-            )
-            for p in products
+        scores = {p.id: self._calculate_fitness_score(p) for p in self.products}
+        
+        # Create LP problem
+        prob = LpProblem("CuentaOptimization", LpMaximize)
+        
+        # Decision variables: quantity of each product
+        qty = {
+            p.id: LpVariable(f"qty_{p.id}", lowBound=0, upBound=max_per_product, cat="Integer")
+            for p in self.products
         }
-
-        # Objective: Maximize total protein (weighted by fitness score)
+        
+        # Objective: Maximize weighted protein (protein * fitness_score)
         prob += lpSum(
-            product_vars[p.id] * p.total_protein * (scores[p.id] / 100)
-            for p in products
-        ), "WeightedProtein"
-
-        # Constraint 1: Stay under budget
-        prob += (
-            lpSum(product_vars[p.id] * p.price for p in products) <= budget,
-            "Budget",
+            qty[p.id] * p.total_protein * (scores[p.id] / 100)
+            for p in self.products
         )
-
-        # Constraint 2: Meet minimum calories (within 10%)
-        prob += (
-            lpSum(product_vars[p.id] * p.total_calories for p in products)
-            >= weekly_calories * 0.9,
-            "MinCalories",
-        )
-
-        # Constraint 3: Don't exceed calories too much (within 20%)
-        prob += (
-            lpSum(product_vars[p.id] * p.total_calories for p in products)
-            <= weekly_calories * 1.2,
-            "MaxCalories",
-        )
-
-        # Constraint 4: Minimum protein target
-        prob += (
-            lpSum(product_vars[p.id] * p.total_protein for p in products)
-            >= weekly_protein * 0.8,
-            "MinProtein",
-        )
-
-        # Constraint 5: Require at least one protein source
-        protein_products = [p for p in products if p.category == "Protein"]
-        if protein_products:
-            prob += (
-                lpSum(product_vars[p.id] for p in protein_products) >= 1,
-                "AtLeastOneProtein",
-            )
-
-        # Constraint 6: Require some variety (at least 5 different items)
-        has_product = {
-            p.id: LpVariable(f"has_{p.id}", cat="Binary") for p in products
-        }
-        for p in products:
-            prob += product_vars[p.id] <= max_per_product * has_product[p.id]
-        prob += lpSum(has_product.values()) >= 5, "MinVariety"
-
-        # 6-7 lollllllllllllllllllllllllllllllllllllllllll solve
-        prob.solve()
-
+        
+        # Constraints
+        # 1. Budget constraint
+        prob += lpSum(qty[p.id] * p.price for p in self.products) <= budget, "Budget"
+        
+        # 2. Minimum calories (90% of target)
+        prob += lpSum(qty[p.id] * p.total_calories for p in self.products) >= weekly_calories * 0.9, "MinCalories"
+        
+        # 3. Maximum calories (120% of target)
+        prob += lpSum(qty[p.id] * p.total_calories for p in self.products) <= weekly_calories * 1.2, "MaxCalories"
+        
+        # 4. Minimum protein (80% of target)
+        prob += lpSum(qty[p.id] * p.total_protein for p in self.products) >= weekly_protein * 0.8, "MinProtein"
+        
+        # 5. Variety constraint (at least 5 different items)
+        has_item = {p.id: LpVariable(f"has_{p.id}", cat="Binary") for p in self.products}
+        for p in self.products:
+            prob += qty[p.id] <= max_per_product * has_item[p.id]
+        prob += lpSum(has_item.values()) >= 5, "MinVariety"
+        
+        # 6 Solve (suppress output)
+        prob.solve(PULP_CBC_CMD(msg=0))
+        
+        # 7 LOLLLLLLLLLLLLLLLLLLLLLL this is always funny. 
         if LpStatus[prob.status] != "Optimal":
             return OptimizationResult(
                 success=False,
-                items=[],
-                total_cost=0,
-                total_protein=0,
-                total_calories=0,
-                budget=budget,
-                calorie_target=weekly_calories,
-                status=f"Optimization failed: {LpStatus[prob.status]}",
+                status=f"Optimization failed: {LpStatus[prob.status]}"
             )
-
         # Extract results
-        items: list[BasketItem] = []
-        total_cost = 0.0
-        total_protein = 0.0
+        items = []
+        total_cost = 0
+        total_protein = 0
         total_calories = 0
-
-        for p in products:
-            qty = int(lp_value(product_vars[p.id]) or 0) # type: ignore[arg-type]
-            if qty > 0:
-                score = scores[p.id]
-                item = BasketItem(
-                    product=p,
-                    quantity=qty,
-                    fitness_score=score,
-                    selection_reason=self.get_selection_reason(p, score),
-                )
-                items.append(item)
-                total_cost += item.total_price
-                total_protein += item.total_protein
-                total_calories += item.total_calories
-
+         
+        for p in self.products:
+            q = get_qty(qty[p.id])
+            if q > 0:
+                item_cost = p.price * q
+                item_protein = p.total_protein * q
+                item_calories = p.total_calories * q
+                
+                items.append({
+                    "id": p.id,
+                    "name": p.name,
+                    "quantity": q,
+                    "unit_price": p.price,
+                    "total_price": round(item_cost, 2),
+                    "total_protein": round(item_protein, 1),
+                    "total_calories": item_calories,
+                    "fitness_score": round(scores[p.id], 1),
+                    "reason": f"{p.protein_per_dollar:.1f}g/$ | {p.protein_per_100cal:.1f}g/100cal",
+                    "category": p.category
+                })
+                
+                total_cost += item_cost
+                total_protein += item_protein
+                total_calories += item_calories
+        
+        # Sort by fitness score
+        items.sort(key=lambda x: x["fitness_score"], reverse=True)
+        
+        # Calculate summary stats
+        budget_util = (total_cost / budget * 100) if budget > 0 else 0
+        calorie_achieve = (total_calories / weekly_calories * 100) if weekly_calories > 0 else 0
+        protein_achieve = (total_protein / weekly_protein * 100) if weekly_protein > 0 else 0
+        
         return OptimizationResult(
             success=True,
-            items=items,
-            total_cost=total_cost,
-            total_protein=total_protein,
-            total_calories=total_calories,
-            budget=budget,
-            calorie_target=weekly_calories,
-            status="Optimal solution found",
+            status="Optimization complete",
+            summary={
+                "total_cost": round(total_cost, 2),
+                "total_protein": round(total_protein, 1),
+                "total_calories": total_calories,
+                "budget": budget,
+                "calorie_target": weekly_calories,
+                "protein_target": weekly_protein,
+                "budget_utilization": f"{budget_util:.1f}%",
+                "calorie_achievement": f"{calorie_achieve:.1f}%",
+                "protein_achievement": f"{protein_achieve:.1f}%"
+            },
+            items=items
         )
 
 
-# CLI Interface for testing
+# CLI test
+def main():
+    print("\n" + "=" * 70)
+    print("🧾 CUENTA OPTIMIZER TEST")
+    print("=" * 70)
+    
+    engine = OptimizationEngine()
+    
+    result = engine.optimize(
+        budget=75.0,
+        calorie_target=2000,
+        protein_target=150,
+        max_per_product=3
+    )
+    
+    if not result.success:
+        print(f"\n❌ {result.status}")
+        return
+    
+    print(f"\n✅ {result.status}")
+    print("\n📊 Summary:")
+    print(f"   Cost: ${result.summary['total_cost']:.2f} ({result.summary['budget_utilization']} of budget)")
+    print(f"   Protein: {result.summary['total_protein']:.0f}g/week ({result.summary['total_protein']/7:.0f}g/day)")
+    print(f"   Calories: {result.summary['total_calories']:,}/week ({result.summary['total_calories']//7:,}/day)")
+    
+    print(f"\n🛒 Basket ({len(result.items)} items):")
+    print("-" * 70)
+    
+    for item in result.items:
+        ppd = item['total_protein'] / item['total_price'] if item['total_price'] > 0 else 0
+        ppc = (item['total_protein'] / item['total_calories'] * 100) if item['total_calories'] > 0 else 0
+        print(f"\n   {item['name']}")
+        print(f"   {item['quantity']}× @ ${item['unit_price']:.2f} = ${item['total_price']:.2f}")
+        print(f"   → {item['total_protein']:.0f}g protein | {item['total_calories']:,} cal")
+        print(f"   → {ppd:.1f} g/$ | {ppc:.1f} g/100cal | {item['category']}")
+    
+    print("\n" + "=" * 70)
+
 
 if __name__ == "__main__":
-    import sys
-
-    # Default parameters
-    budget = float(sys.argv[1]) if len(sys.argv) > 1 else 75.0
-    calories = int(sys.argv[2]) if len(sys.argv) > 2 else 2000
-
-    print("\n🛒 Fit-Econ Optimizer")
-    print(f"   Budget: ${budget:.2f}")
-    print(f"   Daily Calories: {calories}")
-    print("   Optimizing...\n")
-
-    engine = OptimizationEngine()
-
-    try:
-        result = engine.optimize(budget=budget, calorie_target=calories)
-
-        if result.success:
-            data = result.to_dict()
-
-            print("=" * 60)
-            print("✅ OPTIMIZATION COMPLETE")
-            print("=" * 60)
-            print("\n📊 Summary:")
-            print(f"   Total Cost: ${data['summary']['total_cost']:.2f} ({data['summary']['budget_utilization']})")
-            print(f"   Total Protein: {data['summary']['total_protein']:.0f}g/week")
-            print(f"   Total Calories: {data['summary']['total_calories']:,}/week ({data['summary']['calorie_achievement']})")
-
-            print(f"\n🛒 Your Optimal Basket ({len(data['items'])} items):")
-            print("-" * 60)
-
-            for item in data["items"]:
-                print(f"\n   {item['name']}")
-                print(f"      Qty: {item['quantity']} × ${item['unit_price']:.2f} = ${item['total_price']:.2f}")
-                print(f"      Protein: {item['total_protein']:.0f}g | Calories: {item['total_calories']}")
-                print(f"      Score: {item['fitness_score']:.0f} - {item['reason']}")
-
-            print("\n" + "=" * 60)
-
-        else:
-            print(f"❌ Optimization failed: {result.status}")
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        print("\nMake sure you've set SUPABASE_URL and SUPABASE_KEY in your .env file")
+    main()

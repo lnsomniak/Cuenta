@@ -2,7 +2,7 @@
 #local test runner 
 echo ""
 echo "============================"
-echo "🛒 FIT-ECON MVP - Local Test"
+echo "🛒 CUENTA MVP - Local Test"
 echo "============================"
 echo ""
 

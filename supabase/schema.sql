@@ -1,5 +1,5 @@
 -- ============================================================================
--- FIT-ECON MVP: Complete Schema
+-- CUENTA MVP: Complete Schema
 -- ============================================================================
 
 -- PG VECTOR IMPLEMENTED ALREADY BECAUSE WHY WOULD WE EVER USE MYSQL

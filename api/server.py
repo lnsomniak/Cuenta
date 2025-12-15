@@ -17,7 +17,7 @@ if pulp.LpSolverDefault is not None:
     pulp.LpSolverDefault.msg = False
 
 app = FastAPI(
-    title="Fit-Econ API",
+    title="Cuenta API",
     description="Grocery optimization for fitness goals",
     version="0.1.0"
 )
@@ -207,7 +207,7 @@ def run_optimization(budget: float, daily_calories: int, daily_protein: int, max
 # endpoints and messages for myself
 @app.get("/")
 async def root():
-    return {"message": "Fit-Econ API is running", "docs": "/docs"}
+    return {"message": "Cuenta API is running", "docs": "/docs"}
 
 @app.get("/health")
 async def health():
@@ -324,7 +324,7 @@ async def search_recipes(
 # test cases 
 if __name__ == "__main__":
     import uvicorn
-    print("\n🚀 Starting Fit-Econ API (Mock Data Mode)")
+    print("\n🚀 Starting Cuenta API (Mock Data Mode)")
     print("   http://localhost:8000")
     print("   http://localhost:8000/docs (Swagger UI)")
     print("\n   Press Ctrl+C to stop\n")

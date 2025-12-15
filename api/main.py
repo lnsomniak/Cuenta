@@ -15,7 +15,7 @@ SPOONACULAR_KEY = os.getenv("SPOONACULAR_API_KEY")
 SPOONACULAR_BASE = "https://api.spoonacular.com"
 
 app = FastAPI(
-    title="Fit-Econ API",
+    title="Cuenta API",
     description="Grocery optimization for fitness goals",
     version="0.1.0"
 )

@@ -31,7 +31,7 @@ def run_scenario(name: str, budget: float, daily_cal: int, daily_prot: int) -> N
 if pulp.LpSolverDefault is not None:
     pulp.LpSolverDefault.msg = False
 
-print("\n" + "🧪 FIT-ECON MULTI-SCENARIO TEST ".center(60, "="))
+print("\n" + "🧪 CUENTA MULTI-SCENARIO TEST ".center(60, "="))
 
 run_scenario("Tight Budget Student", 40, 1800, 100)
 run_scenario("Standard Fitness", 75, 2000, 150)
