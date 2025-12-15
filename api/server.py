@@ -67,7 +67,7 @@ class OptimizeRequest(BaseModel):
     budget: float = Field(default=75.0, ge=20, le=500)
     daily_calories: int = Field(default=2000, ge=1200, le=5000)
     daily_protein: Optional[int] = Field(default=150, ge=50, le=400)
-    max_per_product: int = Field(default=3, ge=1, le=10)
+    max_per_product: Optional[int] = Field(default=3, ge=1, le=10)
 
 # mock data, should be same as seed.sql
 
@@ -215,11 +215,14 @@ async def health():
 
 @app.post("/api/optimize")
 async def optimize(request: OptimizeRequest):
+    
+    max_per_product_value = request.max_per_product if request.max_per_product is not None else 3
+    # this should fix my object object error, that was appearing because max_per_product wasn't being recieved by the frontend properly. converitng it into an optional integer should make this more viable. 
     result, status = run_optimization(
         budget=request.budget,
         daily_calories=request.daily_calories,
         daily_protein=request.daily_protein or 150,
-        max_per_product=request.max_per_product
+        max_per_product=max_per_product_value
     )
     
     if result is None:

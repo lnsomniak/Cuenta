@@ -88,7 +88,7 @@ PRODUCTS = [
     Product("33", "Frozen Broccoli (12 oz)", 1.29, 30, 3, 3, "Produce"),
     Product("34", "Avocados (4 ct)", 3.29, 160, 2, 4, "Produce"),
     
-    # LEGUMES
+    # LENTEJAS
     Product("40", "Dakota's Pride Black Beans (15 oz)", 0.79, 110, 7, 3.5, "Legumes"),
     Product("41", "Dakota's Pride Chickpeas (15 oz)", 0.79, 110, 6, 3.5, "Legumes"),
     Product("42", "Simply Nature Lentils (16 oz)", 2.49, 170, 12, 13, "Legumes"),
