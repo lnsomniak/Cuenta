@@ -42,6 +42,10 @@ export default function Home() {
   const [budget, setBudget] = useState(75);
   const [calories, setCalories] = useState(2000);
   const [protein, setProtein] = useState(150);
+
+  const [maxPerProduct, setMaxPerProduct] = useState(3);
+  const [diet, setDiet] = useState<string>(""); 
+  const [allergies, setAllergies] = useState<string[]>([]);
 // new needed for recipes which looks great!
   const [optimizing, setOptimizing] = useState(false);
   const [loadingRecipes, setLoadingRecipes] = useState(false);
@@ -68,6 +72,9 @@ export default function Home() {
           budget,
           daily_calories: calories,
           daily_protein: protein,
+          max_per_product: maxPerProduct,
+          diet: diet || null, // Send null or empty string if "None" is selected
+          allergies: allergies, // Send the array of selected allergies. big fixes glad i tested. 
         }),
       });
 
@@ -226,7 +233,70 @@ const barcodePattern = [2,1,3,1,2,1,1,3,2,1,1,2,3,1,2,1,1,2,1,3,2,1,1,2,1,3,1,2,
                   step={10}
                 />
               </div>
-            </div>
+            </div> 
+
+    {/* Max Per Product Input */} 
+    <div className="flex justify-between items-center mb-3">
+        <span className="text-sm">MAX PER PRODUCT</span>
+        <input
+            type="number"
+            value={maxPerProduct}
+            onChange={(e) => setMaxPerProduct(Number(e.target.value))}
+            className="w-16 bg-transparent border-b-2 border-gray-400 text-right text-sm font-bold focus:outline-none focus:border-gray-900"
+            style={{ backgroundColor: "transparent" }}
+            min={1} // Set minimum to 1, matching my backend constraint
+            max={10} // Set maximum to 10, matching mt backend constraint
+            step={1}
+        />
+    </div>
+
+                    {/*NEW: DIETARY RESTRICTION (Single Select) */}
+        <div className="flex justify-between items-center mb-3">
+            <span className="text-sm">DIET RESTRICTION</span>
+            <select
+                value={diet}
+                onChange={(e) => setDiet(e.target.value)}
+                className="w-24 bg-transparent border-b-2 border-gray-400 text-right text-sm font-bold focus:outline-none focus:border-gray-900"
+                style={{ backgroundColor: "transparent" }}
+            >
+                <option value="">NONE</option>
+                <option value="Vegan">VEGAN</option>
+                <option value="Vegetarian">VEGETARIAN</option>
+                <option value="Pescatarian">PESCATARIAN</option>
+                <option value="Keto">KETO</option>
+            </select>
+        </div>
+
+        {/* NEW: ALLERGIES (Multi Select) */}
+{/* NOTE: I've learned, handling multi select in a simple <select> (because of my lack of screen real estate is tricky in React, but this is the functional way. */}
+        <div className="flex justify-between items-center">
+            <span className="text-sm">ALLERGY EXCLUSIONS</span>
+            <select
+                // The value attribute expects an array for multi-select
+                value={allergies}
+                // When an option is clicked, update the state array based on the selections
+                onChange={(e) => {
+                    const selectedOptions = Array.from(e.target.options)
+                        .filter(option => option.selected)
+                        .map(option => option.value);
+                    setAllergies(selectedOptions);
+                }}
+                multiple 
+                className="w-24 bg-transparent border-b-2 border-gray-400 text-right text-sm font-bold focus:outline-none focus:border-gray-900 h-10 overflow-y-auto"
+                style={{ backgroundColor: "transparent" }}
+            >
+                {/* These options must exactly match the keys in your backend ALLERGY_TAG_MAP */}
+                <option value="Dairy">DAIRY</option>
+                <option value="Eggs">EGGS</option>
+                <option value="Gluten">GLUTEN</option>
+                <option value="Nuts">NUTS</option>
+                <option value="Soy">SOY</option>
+                <option value="Fish">FISH</option>
+            </select>
+        </div>
+
+
+
 
             {/* Optimize Button */}
             <div className="py-4 border-b border-dashed border-gray-200">
