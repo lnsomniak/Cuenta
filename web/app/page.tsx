@@ -47,6 +47,11 @@ export default function Home() {
   const [diet, setDiet] = useState<string>(""); 
   const [allergies, setAllergies] = useState<string[]>([]);
 // new needed for recipes which looks great!
+// new neeeded for collge student feature
+const [universityName, setUniversityName] = useState("");
+const [selectedStore, setSelectedStore] = useState("");
+const [useLocation, setUseLocation] = useState(false); // To handle the geolocation trigger
+
   const [optimizing, setOptimizing] = useState(false);
   const [loadingRecipes, setLoadingRecipes] = useState(false);
 
@@ -74,7 +79,9 @@ export default function Home() {
           daily_protein: protein,
           max_per_product: maxPerProduct,
           diet: diet || null, // Send null or empty string if "None" is selected
-          allergies: allergies, // Send the array of selected allergies. big fixes glad i tested. 
+          allergies: allergies,
+          university_name: universityName || null,
+          selected_store: selectedStore || null,
         }),
       });
 
@@ -295,8 +302,51 @@ const barcodePattern = [2,1,3,1,2,1,1,3,2,1,1,2,3,1,2,1,1,2,1,3,2,1,1,2,1,3,1,2,
             </select>
         </div>
 
+        {/* ** COLLEGE STUDENT MODE ** SECTION */}
+        <div className="py-4 border-b border-dashed border-gray-200">
+            <div className="text-xs text-gray-500 mb-3 tracking-wider">** COLLEGE MODE **</div>
+            
+            {/* University Name/Location Input */}
+            <div className="flex justify-between items-center mb-3">
+                <span className="text-sm">UNIVERSITY / CITY</span>
+                <input
+                    type="text"
+                    placeholder="e.g., Rice University"
+                    value={universityName}
+                    onChange={(e) => setUniversityName(e.target.value)}
+                    className="w-40 bg-transparent border-b-2 border-gray-400 text-right text-sm font-bold focus:outline-none focus:border-gray-900 placeholder-gray-300"
+                    style={{ backgroundColor: "transparent" }}
+                />
+            </div>
 
+            {/* Nearest Store Selector (Allows Editing) */}
+            <div className="flex justify-between items-center">
+                <span className="text-sm">NEAREST STORE</span>
+                <select
+                    value={selectedStore}
+                    onChange={(e) => setSelectedStore(e.target.value)}
+                    className="w-40 bg-transparent border-b-2 border-gray-400 text-right text-sm font-bold focus:outline-none focus:border-gray-900"
+                    style={{ backgroundColor: "transparent" }}
+                >
+                    <option value="">(Use Location/Default)</option>
+                    <option value="Aldi">ALDI</option>
+                    <option value="HEB">HEB</option>
+                    <option value="Kroger">KROGER</option>
+                    {/* Add your university-specific stores here later */}
+                    <option value="CampusStoreA">CAMPUS DINING A</option>
+                </select>
+            </div>
 
+            {/* Geolocation Button (to be implemented later) */}
+            <button
+                onClick={() => setUseLocation(true)} 
+                className="w-full mt-4 py-2 text-xs tracking-wider border border-gray-400 disabled:opacity-50"
+                disabled={true} // Disable for now until the geolocation logic is built
+                style={{ color: "#1a1a1a", backgroundColor: "transparent" }}
+            >
+                USE CURRENT LOCATION (WIP)
+            </button>
+        </div>
 
             {/* Optimize Button */}
             <div className="py-4 border-b border-dashed border-gray-200">

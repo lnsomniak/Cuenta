@@ -1,7 +1,7 @@
 import os
 import pulp
 import httpx
-from typing import Optional, cast
+from typing import Optional, cast, List
 from dotenv import load_dotenv
 from dataclasses import dataclass, field
 from pydantic import BaseModel, Field
@@ -71,7 +71,8 @@ class OptimizeRequest(BaseModel):
     max_per_product: Optional[int] = Field(default=3, ge=1, le=10)
     allergies: list[str] = Field(default=[], description="List of product categories/ingredients to exclude") # New Allergy field, thank you adamaris
     diet: Optional[str] = Field(default=None, description="Single dietary restriction (e.g., 'Vegan', 'Keto')")
-
+    university_name: Optional[str] = Field(default=None)  
+    selected_store: Optional[str] = Field(default=None)  
 # mock data, should be same as seed.sql
 
 PRODUCTS = [
@@ -156,11 +157,14 @@ ALLERGY_TAG_MAP = {
 
 def run_optimization(
     budget: float, 
-    daily_calories: int, 
-    daily_protein: int, 
+    calorie_target: int, 
+    protein_target: int, 
     max_per_product: int,
     allergies: list[str],
-    diet: Optional[str] 
+    diet: Optional[str],
+    university_name: Optional[str],
+    selected_store: Optional[str],
+    
 ):
     
     available_products = PRODUCTS
@@ -187,8 +191,8 @@ def run_optimization(
     if not available_products:
         return None, "All products filtered by restrictions. Please adjust...please."
     
-    weekly_calories = daily_calories * 7
-    weekly_protein = daily_protein * 7
+    weekly_calories = calorie_target * 7
+    weekly_protein = protein_target * 7
     
     scores = {p.id: calculate_fitness_score(p) for p in available_products} 
     
@@ -269,22 +273,34 @@ async def health():
 
 @app.post("/api/optimize")
 async def optimize(request: OptimizeRequest):
+    try:
     # temp fix hopefully while I make a structure to hopefully start working on the supabase database tonight
-    daily_protein_value = request.daily_protein if request.daily_protein is not None else 150
-    max_per_product_value = request.max_per_product if request.max_per_product is not None else 3
+        request_data = request.model_dump()
+        daily_protein_value = request.daily_protein if request.daily_protein is not None else 150
     # this should fix my object object error, that was appearing because max_per_product wasn't being recieved by the frontend properly. converitng it into an optional integer should make this more viable. 
-    result, status = run_optimization(
-        budget=request.budget,
-        daily_calories=request.daily_calories,
-        daily_protein=daily_protein_value,
-        max_per_product=max_per_product_value,
-        allergies=request.allergies, 
-        diet=request.diet
-    )
-    if result is None:
-        raise HTTPException(status_code=400, detail=f"Optimization failed: {status}")
     
-    return result
+        result, status = run_optimization(
+            budget=request_data["budget"],
+            calorie_target=request_data["daily_calories"],
+            protein_target=daily_protein_value, 
+            max_per_product=request_data["max_per_product"],
+            allergies=request_data["allergies"],
+            diet=request_data["diet"],
+            university_name=request_data["university_name"], 
+            selected_store=request_data["selected_store"],
+        )
+    
+        if result is None:
+            raise HTTPException(status_code=400, detail=f"Optimization failed: {status}")
+        
+        return result
+            
+            
+    except Exception as e:
+        # 
+        print(f"Optimization Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Optimization failed: {str(e)}")
+        
 
 @app.get("/api/products")
 async def list_products():
