@@ -2,6 +2,8 @@
 
 Grocery optimization that shows you both protein per-dollar and per-calorie so you can make your own call.
 
+<img width="981" alt="Cuenta UI" src="https://github.com/user-attachments/assets/db1156a5-42bd-4df3-95bf-45c9cc8f6f5e" />
+
 ---
 
 ## Why
@@ -16,16 +18,26 @@ It calculates **g/$** (protein per dollar) and **g/cal** (protein per 100 calori
 
 ## Stack
 
-- **Frontend:** Next.js 14, Tailwind CSS, TypeScript
-- **Backend:** FastAPI, PuLP (linear programming)
-- **Data:** Mock Aldi products (real scraper coming)
+| Layer | Tech |
+|-------|------|
+| Frontend | Next.js 14, Tailwind, TypeScript |
+| Backend | FastAPI, PuLP (linear programming) |
+| Data | Target API (real-time), Aldi (coming) |
 
 ---
 
-## Live
+## Acknowledgments
 
-→ [cuenta.vercel.app](https://cuenta.vercel.app) *(coming soon)*
+- **[Matt Stiles](https://github.com/stiles)** – Target scraper adapted from [stiles/aldi](https://github.com/stiles/aldi). His research into retail APIs made my real time nutrition data possible.
 
 ---
 
-Built in Houston.
+## Status
+
+Live at **[cuenta.vercel.app](https://cuenta.vercel.app)**
+
+Currently optimizing against Target product data with full nutrition facts. Aldi integration in progress, as well as a student mode for an intergration of on campus stores.
+
+---
+
+<sub>Built in Houston, Visca Barca</sub>

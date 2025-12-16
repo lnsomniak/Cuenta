@@ -1,5 +1,6 @@
 -- ============================================================================
 -- CUENTA MVP: Complete Schema
+-- I am so excited for this to come alive. The moment I commit a supabase structure my god I will be so happy.
 -- ============================================================================
 
 -- PG VECTOR IMPLEMENTED ALREADY BECAUSE WHY WOULD WE EVER USE MYSQL
@@ -28,7 +29,7 @@ CREATE TABLE recipes (
 CREATE TABLE recipe_ingredients (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     recipe_id UUID REFERENCES recipes(id) ON DELETE CASCADE,
-    product_id UUID REFERENCES products(id),  -- nullable if no ALDI match
+    product_id UUID REFERENCES products(id),  -- nullable if no match
     ingredient_name TEXT NOT NULL,            -- original from API
     quantity FLOAT,
     unit TEXT
@@ -66,18 +67,11 @@ CREATE POLICY "Users access their meal plan items" ON meal_plan_items
     FOR ALL USING (
         meal_plan_id IN (SELECT id FROM meal_plans WHERE user_id = auth.uid())
     );
-
--- ============================================================================
--- INDEXES
--- ============================================================================
+    
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_products_protein_per_dollar ON products(protein_per_dollar DESC);
 CREATE INDEX IF NOT EXISTS idx_baskets_user_id ON baskets(user_id);
 CREATE INDEX IF NOT EXISTS idx_basket_items_basket_id ON basket_items(basket_id);
-
--- ============================================================================
--- AUTO-CREATE PROFILE ON SIGNUP
--- ============================================================================
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN

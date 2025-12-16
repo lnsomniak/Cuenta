@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from dataclasses import dataclass, field
 from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, Query
+from scrapers.target import fetch_cuenta_product, search_products # not used yet, but will be! 
 from fastapi.middleware.cors import CORSMiddleware
 from pulp import LpMaximize, LpProblem, LpVariable, lpSum, LpStatus, value as lp_value # ez fix but not so easy fix to lines 36 and 168
 
