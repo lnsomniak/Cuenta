@@ -2,6 +2,9 @@
 
 Grocery optimization that shows you both protein per-dollar and per-calorie so you can make your own call.
 
+<img width="981" height="911" alt="image" src="https://github.com/user-attachments/assets/db1156a5-42bd-4df3-95bf-45c9cc8f6f5e" />
+
+
 ---
 
 ## Why
@@ -24,7 +27,7 @@ It calculates **g/$** (protein per dollar) and **g/cal** (protein per 100 calori
 
 ## Live
 
-→ [cuenta.vercel.app](https://cuenta.vercel.app) *(coming soon)*
+→ [Check it out!](https://cuenta.vercel.app)
 
 ---
 
