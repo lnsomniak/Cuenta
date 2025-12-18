@@ -2,6 +2,7 @@
 
 **Grocery Intelligence** — Options, not decisions.
 
+<<<<<<< HEAD
 Cuenta optimizes your grocery shopping by finding the most protein efficient products within your budget. Built for fitness focused students and budget conscious shoppers.
 
 ![Receipt UI](https://img.shields.io/badge/UI-Receipt%20Style-black)
@@ -126,3 +127,45 @@ BUDGET UTILIZATION            99.2%
 ---
 
 *The data is yours. The decision is too. Visca Barca.*
+=======
+<img width="981" height="911" alt="image" src="https://github.com/user-attachments/assets/db1156a5-42bd-4df3-95bf-45c9cc8f6f5e" />
+
+
+---
+
+## Why
+
+Most nutrition apps tell you what to do. Cuenta doesn't.
+
+It calculates **g/$** (protein per dollar) and **g/cal** (protein per 100 calories) for every item, then lets you decide what matters today. Sometimes you're optimizing for budget. Sometimes you're cutting. The tradeoffs are yours.
+
+> *options, not decisions*
+
+---
+
+## Stack
+
+| Layer | Tech |
+|-------|------|
+| Frontend | Next.js 14, Tailwind, TypeScript |
+| Backend | FastAPI, PuLP (linear programming) |
+| Data | Target API (real-time), Aldi (coming) |
+
+---
+
+## Acknowledgments
+
+- **[Matt Stiles](https://github.com/stiles)** – Target scraper adapted from [stiles/aldi](https://github.com/stiles/aldi). His research into retail APIs made my real time nutrition data possible.
+  
+---
+
+## Status
+
+Live at **[cuenta.vercel.app](https://cuenta.vercel.app)**
+
+Currently optimizing against Target product data with full nutrition facts. Aldi integration in progress, as well as a student mode for an intergration of on campus stores.
+
+---
+
+<sub>Built in Houston, Visca Barca</sub>
+>>>>>>> 5366edaf13e3453aeefa9929804aa9b2ff6e7eb7
