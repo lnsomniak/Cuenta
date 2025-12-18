@@ -1,19 +1,26 @@
 import type { Metadata } from 'next'
 import './globals.css'
-// so THIS is why my railway wasn't working. 
+// Removed .tsx and ensured casing matches your actual file
+import Navigation from "@/components/navigation"; 
+
 export const metadata: Metadata = {
-  title: 'Cuenta - Grocery Intelligence',
-  description: 'Options, not decisions. Optimize your grocery shopping with protein efficiency metrics.',
-}
+  title: "Cuenta - Grocery Intelligence",
+  description: "Options, not decisions. Optimize your grocery shopping with protein efficiency metrics.",
+};
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode
+  readonly children: React.ReactNode // I hate you sonarqube
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body style={{ backgroundColor: "#1a1a1a" }}>
+        <div className="min-h-screen p-4 md:p-8">
+          <Navigation />
+          {children}
+        </div>
+      </body>
     </html>
-  )
+  );
 }

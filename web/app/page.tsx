@@ -1,6 +1,7 @@
 "use client";
-// reciept interface meant to be luxurious but not pretentious. 
+// reciept interface meant to be luxurious but not pretentious. that is very important.
 import { useState } from "react";
+import { getCurrentPosition, findNearestStores, NearbyStore } from "@/lib/geolocation";
 
 interface BasketItem {
   id: string;
@@ -46,11 +47,16 @@ export default function Home() {
   const [maxPerProduct, setMaxPerProduct] = useState(3);
   const [diet, setDiet] = useState<string>(""); 
   const [allergies, setAllergies] = useState<string[]>([]);
-// new needed for recipes which looks great!
-// new neeeded for collge student feature
+
+// College student mode
 const [universityName, setUniversityName] = useState("");
 const [selectedStore, setSelectedStore] = useState("");
-const [useLocation, setUseLocation] = useState(false); // To handle the geolocation trigger
+
+  // Geolocation state
+  const [nearbyStores, setNearbyStores] = useState<NearbyStore[]>([]);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [userCoords, setUserCoords] = useState<{lat: number, lon: number} | null>(null);
 
   const [optimizing, setOptimizing] = useState(false);
   const [loadingRecipes, setLoadingRecipes] = useState(false);
@@ -62,6 +68,44 @@ const [useLocation, setUseLocation] = useState(false); // To handle the geolocat
   const [activeTab, setActiveTab] = useState<"basket" | "recipes">("basket");
 
   const API_URL=process.env.NEXT_PUBLIC_API_URL||"http://127.0.0.1:8000";
+
+  // ============================================================================
+  // GEOLOCATION HANDLER - THE MAGIC
+  // ============================================================================
+  const handleUseLocation = async () => {
+    alert("Button clicked!");  // please work button
+    console.log("Starting geolocation...");
+    setLocationLoading(true);
+    setLocationError(null);
+
+    try {
+      // Get user's position
+      const coords = await getCurrentPosition();
+      setUserCoords({ lat: coords.latitude, lon: coords.longitude });
+      
+      // Find nearest stores (top 5,)
+      const stores = findNearestStores(coords.latitude, coords.longitude, 5);
+      setNearbyStores(stores);
+      
+      // Auto-select the nearest store's chain
+      if (stores.length > 0) {
+        setSelectedStore(stores[0].chain);
+      }
+    } catch (err) {
+      setLocationError(err instanceof Error ? err.message : "Location failed");
+    } finally {
+      setLocationLoading(false);
+    }
+  };
+
+    // Filter nearby stores by chain when user wants to see specific chain options
+  const handleFilterByChain = (chain: string) => {
+    if (!userCoords) return;
+    const filtered = findNearestStores(userCoords.lat, userCoords.lon, 5, chain);
+    setNearbyStores(filtered);
+    setSelectedStore(chain);
+  };
+
 
   const handleOptimize = async () => {
     setOptimizing(true);
@@ -140,6 +184,7 @@ const [useLocation, setUseLocation] = useState(false); // To handle the geolocat
   const getProteinPerCal = (item: BasketItem) => {
     return item.total_calories > 0 ? ((item.total_protein / item.total_calories) * 100).toFixed(1) : "0";
   };
+
 // such an underrated feature, seeing the time is so perfect. looks SOOO good imo. 
   const receiptDate = new Date().toLocaleDateString("en-US", {
     weekday: "short",
@@ -257,7 +302,7 @@ const barcodePattern = [2,1,3,1,2,1,1,3,2,1,1,2,3,1,2,1,1,2,1,3,2,1,1,2,1,3,1,2,
         />
     </div>
 
-                    {/*NEW: DIETARY RESTRICTION (Single Select) */}
+        {/* DIETARY RESTRICTION (Single Select) */}
         <div className="flex justify-between items-center mb-3">
             <span className="text-sm">DIET RESTRICTION</span>
             <select
@@ -274,7 +319,7 @@ const barcodePattern = [2,1,3,1,2,1,1,3,2,1,1,2,3,1,2,1,1,2,1,3,2,1,1,2,1,3,1,2,
             </select>
         </div>
 
-        {/* NEW: ALLERGIES (Multi Select) */}
+        {/* ALLERGIES (Multi Select) */}
 {/* NOTE: I've learned, handling multi select in a simple <select> (because of my lack of screen real estate is tricky in React, but this is the functional way. */}
         <div className="flex justify-between items-center">
             <span className="text-sm">ALLERGY EXCLUSIONS</span>
@@ -292,7 +337,6 @@ const barcodePattern = [2,1,3,1,2,1,1,3,2,1,1,2,3,1,2,1,1,2,1,3,2,1,1,2,1,3,1,2,
                 className="w-24 bg-transparent border-b-2 border-gray-400 text-right text-sm font-bold focus:outline-none focus:border-gray-900 h-10 overflow-y-auto"
                 style={{ backgroundColor: "transparent" }}
             >
-                {/* These options must exactly match the keys in your backend ALLERGY_TAG_MAP */}
                 <option value="Dairy">DAIRY</option>
                 <option value="Eggs">EGGS</option>
                 <option value="Gluten">GLUTEN</option>
@@ -302,9 +346,11 @@ const barcodePattern = [2,1,3,1,2,1,1,3,2,1,1,2,3,1,2,1,1,2,1,3,2,1,1,2,1,3,1,2,
             </select>
         </div>
 
-        {/* ** COLLEGE STUDENT MODE ** SECTION */}
+        {/* ============================================================ */}
+        {/* LOCATION SECTION - NOW FUNCTIONAL */}
+        {/* ============================================================ */}
         <div className="py-4 border-b border-dashed border-gray-200">
-            <div className="text-xs text-gray-500 mb-3 tracking-wider">** COLLEGE MODE **</div>
+            <div className="text-xs text-gray-500 mb-3 tracking-wider">** LOCATION **</div>
             
             {/* University Name/Location Input */}
             <div className="flex justify-between items-center mb-3">
@@ -321,32 +367,96 @@ const barcodePattern = [2,1,3,1,2,1,1,3,2,1,1,2,3,1,2,1,1,2,1,3,2,1,1,2,1,3,1,2,
 
             {/* Nearest Store Selector (Allows Editing) */}
             <div className="flex justify-between items-center">
-                <span className="text-sm">NEAREST STORE</span>
+                <span className="text-sm">STORE CHAIN</span>
                 <select
                     value={selectedStore}
-                    onChange={(e) => setSelectedStore(e.target.value)}
-                    className="w-40 bg-transparent border-b-2 border-gray-400 text-right text-sm font-bold focus:outline-none focus:border-gray-900"
-                    style={{ backgroundColor: "transparent" }}
+                    onChange={(e) => {
+                      setSelectedStore(e.target.value);
+                    // filter nearby stores by the chain
+                    if (userCoords && e.target.value) {
+                      const filtered = findNearestStores(userCoords.lat, userCoords.lon, 5, e.target.value);
+                      setNearbyStores(filtered);
+                    }
+                }} // this took way too long to get right for no reason
+                className="w-40 bg-transparent border-b-2 border-gray-400 text-right text-sm font-bold focus:outline-none focus:border-gray-900"
+                style={{ backgroundColor: "transparent" }}
                 >
-                    <option value="">(Use Location/Default)</option>
-                    <option value="Aldi">ALDI</option>
-                    <option value="HEB">HEB</option>
-                    <option value="Kroger">KROGER</option>
-                    {/* Add your university-specific stores here later */}
-                    <option value="CampusStoreA">CAMPUS DINING A</option>
-                </select>
-            </div>
+                  <option value="">ALL STORES</option>
+                  <option value="Aldi">ALDI</option>
+                  <option value="HEB">HEB</option>
+                  <option value="Kroger">KROGER</option>
+              </select>
+          </div>
 
-            {/* Geolocation Button (to be implemented later) */}
+            {/* Geolocation Button (to be implemented NOW) */}
             <button
-                onClick={() => setUseLocation(true)} 
+                onClick={handleUseLocation}
+                disabled={locationLoading}
                 className="w-full mt-4 py-2 text-xs tracking-wider border border-gray-400 disabled:opacity-50"
-                disabled={true} // Disable for now until the geolocation logic is built
                 style={{ color: "#1a1a1a", backgroundColor: "transparent" }}
             >
-                USE CURRENT LOCATION (WIP)
+              {locationLoading ? "locating..." : "USE CURRENT LOCATION"}
             </button>
-        </div>
+
+              {/* Location Error */}
+              {locationError && (
+                <div className="mt-2 text-xs text-center" style={{ color: "#dc2626" }}>
+                  !! {locationError.toUpperCase()} !!
+                </div>
+              )}
+
+              {/* Nearby Stores (shows after location found) */}
+              {nearbyStores.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-dashed border-gray-200">
+                  <div className="text-xs text-gray-500 mb-2 tracking-wider">NEARBY STORES:</div>
+                  {nearbyStores.slice(0, 4).map((store) => (
+                    <button
+                      key={store.id}
+                      onClick={() => setSelectedStore(store.chain)}
+                      className="w-full text-left py-2 px-2 text-xs hover:bg-gray-100 transition-colors flex justify-between items-center"
+                      style={{
+                        backgroundColor: selectedStore === store.chain ? "#f0f0f0" : "transparent",
+                      }}
+                    >
+                      <div className="flex-1">
+                        <div className="font-medium">{store.name}</div>
+                        <div className="text-gray-400 text-[10px]">{store.address}</div>
+                      </div>
+                      <span className="text-gray-500 ml-2 font-mono">
+                        {store.distance.toFixed(1)} mi 
+                      </span>
+                    </button>
+                  ))}
+                  
+                  {/* Quick chain filters */}
+                  {userCoords && (
+                    <div className="flex gap-2 mt-3 pt-2 border-t border-gray-100">
+                      <button
+                        onClick={() => {
+                          const all = findNearestStores(userCoords.lat, userCoords.lon, 5);
+                          setNearbyStores(all);
+                          setSelectedStore("");
+                        }}
+                        className="flex-1 py-1 text-[10px] border border-gray-300 hover:bg-gray-100"
+                        style={{ backgroundColor: selectedStore ? "#f0f0f0" : "transparent" }}
+                      >
+                        ALL
+                      </button>
+                      {["Kroger", "HEB", "Aldi"].map((chain) => (
+                        <button
+                          key={chain}
+                          onClick={() => handleFilterByChain(chain)}
+                          className="flex-1 py-1 text-[10px] border border-gray-300 hover:bg-gray-100"
+                          style={{ backgroundColor: selectedStore === chain ? "#f0f0f0" : "transparent" }}
+                        >
+                          {chain.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Optimize Button */}
             <div className="py-4 border-b border-dashed border-gray-200">
@@ -359,7 +469,7 @@ const barcodePattern = [2,1,3,1,2,1,1,3,2,1,1,2,3,1,2,1,1,2,1,3,2,1,1,2,1,3,1,2,
                   color: "#fefefa",
                 }}
               >
-                {optimizing ? "CALCULATING..." : "[ RUN OPTIMIZATION ]"}
+                {optimizing ? "Building your mealplan..." : "[ Ready? ]"} 
               </button>
             </div>
 
@@ -425,7 +535,7 @@ const barcodePattern = [2,1,3,1,2,1,1,3,2,1,1,2,3,1,2,1,1,2,1,3,2,1,1,2,1,3,1,2,
                             <span className="text-gray-400">#{String(index + 1).padStart(3, "0")}</span>
                           </div>
                           
-                          {/* Efficiency Metrics - The Core Value */}
+                          {/* Efficiency Metrics */}
                           <div className="flex justify-between text-xs mt-2 pt-2 border-t border-gray-100">
                             <span>
                               <span className="text-gray-400">{item.total_protein.toFixed(0)}g protein</span>
@@ -618,14 +728,17 @@ const barcodePattern = [2,1,3,1,2,1,1,3,2,1,1,2,3,1,2,1,1,2,1,3,2,1,1,2,1,3,1,2,
               </div>
             )}
 
-            {/* Store Hours Footer */}
+            {/* Store Hours Footer, more dynamic based on your selection */}
             <div className="border-t border-dashed border-gray-200 mt-4 pt-4 text-center text-xs text-gray-400">
-              <div>Mr WorldWide • ALDI</div>
-              <div className="mt-1 tracking-wider">CUENTA.APP</div>
-            </div>
+              <div>
+                {selectedStore ? `${selectedStore.toUpperCase()} • ` : ""}
+                HOUSTON TX
+              </div>
+            <div className="mt-1 tracking-wider">CUENTA.APP</div>
           </div>
+        </div>
 
-          {/* Torn bottom edge */}
+          {/* Torn bottom edge needs to get fixed but frontend isn't my realm*/}
           <svg viewBox="0 0 400 15" className="w-full" style={{ backgroundColor: "#1a1a1a" }}>
             <path 
               d="M0,0 Q10,10 20,0 T40,0 T60,0 T80,0 T100,0 T120,0 T140,0 T160,0 T180,0 T200,0 T220,0 T240,0 T260,0 T280,0 T300,0 T320,0 T340,0 T360,0 T380,0 T400,0 L400,0 L0,0 Z" 
