@@ -5,4 +5,4 @@ python-dotenv>=1.0.0
 pulp>=2.7.0
 supabase>=2.10.0
 urllib3>=2.0.0
-httpx>=1.0.0
+httpx>=0.28.1
