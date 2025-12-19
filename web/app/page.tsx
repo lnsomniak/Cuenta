@@ -385,6 +385,7 @@ const barcodePattern = [2,1,3,1,2,1,1,3,2,1,1,2,3,1,2,1,1,2,1,3,2,1,1,2,1,3,1,2,
                   <option value="Aldi">ALDI</option>
                   <option value="HEB">HEB</option>
                   <option value="Kroger">KROGER</option>
+                  <option value="Target">TARGET</option>
               </select>
           </div>
 
@@ -442,7 +443,7 @@ const barcodePattern = [2,1,3,1,2,1,1,3,2,1,1,2,3,1,2,1,1,2,1,3,2,1,1,2,1,3,1,2,
                       >
                         ALL
                       </button>
-                      {["Kroger", "HEB", "Aldi"].map((chain) => (
+                      {["Kroger", "HEB", "Aldi", "Target"].map((chain) => (
                         <button
                           key={chain}
                           onClick={() => handleFilterByChain(chain)}

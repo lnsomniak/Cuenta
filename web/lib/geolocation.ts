@@ -3,86 +3,20 @@ export interface Coordinates {
     longitude: number;
 }
 
-export interface NearbyStore {
+export interface StoreLocation {
     id: string;
     name: string;
     chain: string;
-    distance: number; // in AMEERICAN NUMERALS RAHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH
-    address?: string;
-}
-
-// Get user's current position
-export function getCurrentPosition(): Promise<Coordinates> {
-    return new Promise((resolve, reject) => {
-        if (!navigator.geolocation) {
-            reject(new Error("Geolocation not supported"));
-            return;
-        }
-
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                resolve({
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
-                });
-            },
-            (error) => {
-                switch (error.code) {
-                    case error.PERMISSION_DENIED:
-                        reject(new Error("Location permission denied"))
-                        break;
-                    case error.POSITION_UNAVAILABLE:
-                        reject(new Error("Location unavailable"));
-                        break;
-                    case error.TIMEOUT:
-                        reject(new Error("Location request timed out"));
-                        break;
-                    default:
-                        reject(new Error("Unknown location error"));
-                }
-            },
-            {
-                enableHighAccuracy: false,
-                timeout: 10000,
-                maximumAge: 300000, // Cache for 5 minutes, not too strict
-            }
-        );
-    });
-}
-
-// Calculate distance between two points (Haversine formula, thank you basic trig)
-export function calculateDistance(
-    lat1: number,
-    lon1: number,
-    lat2: number,
-    lon2: number
-): number {
-    const R = 3959; // Earth's radius in miles orr 6,371km on average. I'm using the equatorial radius of 3,963 miles for more accuracy in Houston area
-    const dLat = toRad(lat2 - lat1); 
-    const dLon = toRad(lon2 - lon1);
-    const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(toRad(lat1)) *
-            Math.cos(toRad(lat2)) *
-            Math.sin(dLon / 2) *
-            Math.sin(dLon / 2); // used geogebra to verify calculations, but this is a very standard formula so most of what I did testing was just for fun and interest
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-}
-
-function toRad(deg: number): number {
-    return deg * (Math.PI / 180);
-}
-
-// Houston area store locations (fallback data)
-const HOUSTON_STORES: Array<{
-    id: string;
-    name: string;
-    chain: string;
+    address: string;
     lat: number;
     lon: number;
-    address: string;
-}> = [
+}
+
+export interface NearbyStore extends StoreLocation {
+    distance: number;
+}
+
+export const HOUSTON_STORES: StoreLocation[] = [
     // Kroger
     {
         id: "kroger-heights",
@@ -564,68 +498,164 @@ const HOUSTON_STORES: Array<{
         lon: -95.5335557,
         address: "9525 Westheimer Road, Houston, TX 77063"
     },
-        {
-        id: "aldi-louetta-road",
-        name: "Aldi - Louetta Road",
-        chain: "Aldi",
-        lat: 30.0020036,
-        lon: -95.5599323,
-        address: "9870 Louetta Road, Houston, TX 77070"
-    }    
+    { id: "aldi-louetta-road",name: "Aldi - Louetta Road", chain: "Aldi", lat: 30.0020036, lon: -95.5599323, address: "9870 Louetta Road, Houston, TX 77070"},
+    
+    { id: "target-1", name: "Target Westchase", chain: "Target", address: "10801 Westheimer Road, Houston, TX 77042", lat: 29.73503860163631, lon: -95.56780919335166 },
+    { id: "target-2", name: "Target Northwest Fwy", chain: "Target", address: "13250 Northwest Freeway, Houston, TX 77040,", lat: 29.84921911307792, lon: -95.50270633625009 },
+    { id: "target-3", name: "Target Katy", chain: "Target", address: "19955 Katy Fwy, Houston, TX 77094", lat: 29.7821551, lon: -95.7160541 },
+    { id: "target-4", name: "Target Galleria", chain: "Target", address: "4323 San Felipe Street, Houston, TX 77027", lat: 29.7446495, lon: -95.4531133 },
+    { id: "target-5", name: "Target CopperField", chain: "Target", address: "6955 North Highway 6, Houston, TX 77084", lat: 29.877406, lon: -95.6474813 },
+    { id: "target-6", name: "Target Tomball Pkwy", chain: "Target", address: "21515 Tomball Parkway, Houston, TX 77070", lat: 29.9994221, lon: -95.5842856 },
+    { id: "target-7", name: "Target South Main", chain: "Target", address: "8500 Main St, Houston, TX 77025", lat: 29.6926322, lon: -95.4192764 },
+    { id: "target-8", name: "Target Memorial", chain: "Target", address: "984 Gessner Rd, Houston, TX 77024", lat: 29.78300920697949, lon: -95.54190085801496 },
+    { id: "target-9", name: "Target Meyerland Plaza", chain: "Target", address: "Meyerland Plaza, Target, 300, Houston, TX 77096", lat: 29.6871888, lon: -95.4621266 },
+    { id: "target-10", name: "Target Willowbrook", chain: "Target", address: "6801 Cypress Creek Parkway, Houston, TX 77069", lat: 29.967738737552597, lon: -95.53054208713093 },
+    { id: "target-11", name: "Target Central", chain: "Target", address: "2580 Shearn Street, Houston, TX 77007", lat: 29.7741659, lon: -95.3854351 },
+    { id: "target-12", name: "Target Westheimer", chain: "Target", address: "8605 Westheimer Road, Houston, TX 77063", lat: 29.7345928, lon: -95.5177455 },
+    { id: "target-13", name: "Target Steeplechase", chain: "Target", address: "12701 North Eldridge Parkway, Houston, TX 77082", lat: 29.919249039012165, lon: -95.60497702609074 },
+    { id: "target-14", name: "Target Houston Eldridge Pkwy", chain: "Target", address: "2700 Eldridge Parkway, Houston, TX 77082", lat: 29.7325745, lon: -95.6273463 },
+    { id: "target-15", name: "Target Houston South", chain: "Target", address: "8503 South Sam Houston Parkway East, Houston, TX 77075", lat: 29.6026242, lon: -95.264021 },
+    { id: "target-16", name: "Target Montrose", chain: "Target", address: "2075 Westheimer Road, Houston, TX 77098,", lat: 29.7412274, lon: -95.4094771 },
+    { id: "target-17", name: "Target Humble", chain: "Target", address: "20777 Eastex Freeway, Humble, TX 77338", lat: 30.0192483, lon: -95.2687528 },
+    { id: "target-18", name: "Target Atascocita", chain: "Target", address: "6931 Kingwood Glen Drive, Humble, TX 77346", lat: 30.000910702762337, lon: -95.1725171534204 },
+    { id: "target-19", name: "Target Houston North Central", chain: "Target", address: "19511 North Freeway, Spring, TX 77388", lat: 30.0501898, lon: -95.4348629 },
+    { id: "target-20", name: "Target Spring Grand Parkway North", chain: "Target", address: "6635 North Grand Parkway West, Spring, TX 77389", lat: 30.0868916, lon: -95.5205025 },
+    { id: "target-21", name: "Target Katy Cinco Ranch", chain: "Target", address: "Commercial Center Boulevard, Cinco Ranch, TX 25826,", lat: 29.73575665821079, lon: -95.77578752505156 },
+    { id: "target-22", name: "Target Katy Elyson", chain: "Target", address: "22165 Freeman Road, Katy, TX 77493", lat: 29.872731865816558, lon: -95.75947887682412 },
+    { id: "target-23", name: "Target Sugar Land", chain: "Target", address: "Southwest Freeway Frontage Road, Sugar Land, TX 77479", lat: 29.59620141334226, lon: -95.62732859940195 }
 ];
 
-// Find nearest stores to user's location
+/**
+ *  Get the user's current position using browsers geolocation API
+ */
+export function getCurrentPosition(): Promise<Coordinates> {
+    return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+            reject(new Error("Geolocation not supported"));
+            return;
+        }   
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                resolve({   
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                });
+            },
+            (error) => {
+                switch (error.code) {
+                    case error.PERMISSION_DENIED:
+                        reject(new Error("Location permission denied"))
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        reject(new Error("Location unavailable"));
+                        break;
+                    case error.TIMEOUT:
+                        reject(new Error("Location request timed out"));
+                        break;
+                    default:
+                        reject(new Error("Unknown location error"));
+                }   
+            },
+            {
+                enableHighAccuracy: false,
+                timeout: 10000,
+                maximumAge: 300000, // Cache for 5 minutes, not too strict
+            }
+        );
+    });
+}   
+
+/**
+ * Calculates the dstance between two points using the haversine formula, thank you basic trig and geogebra
+ * returns distanffce in american units
+ */
+export function calculateDistance(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number
+): number {
+    const R = 3959;
+
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = 
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) *
+            Math.cos(toRad(lat2)) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+
+function toRad(deg: number): number {
+    return deg * (Math.PI / 180);
+}
+
+/*Find nearest store toooo the user's loc optionally filtered by chain seen in frontend
+*/
 export function findNearestStores(
     userLat: number,
     userLon: number,
     limit: number = 5,
     chainFilter?: string
-): NearbyStore[] {
+): NearbyStore [] {
     let stores = HOUSTON_STORES;
 
-    // Filter by chain if specified
     if (chainFilter) {
         stores = stores.filter(
-            (s) => s.chain.toLowerCase() === chainFilter.toLowerCase()
-        );
+            (store) => store.chain.toLowerCase() === chainFilter.toLowerCase());
     }
 
-    // Calculate distances and sort
-    const withDistances = stores.map((store) => ({
-        id: store.id,
-        name: store.name,
-        chain: store.chain,
-        address: store.address,
+    const withDistances: NearbyStore[] = stores.map((store) => ({
+        ...store,
         distance: calculateDistance(userLat, userLon, store.lat, store.lon),
     }));
+    
+    // Sort by distance and take the top
+    return withDistances
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, limit);
+    }
 
-    withDistances.sort((a, b) => a.distance - b.distance);
-
-    return withDistances.slice(0, limit);
-}
-
-// Get ZIP code from coordinates (reverse geocoding)
-// Uses free Nominatim API - respect rate limits!
+/*
+This gets the zip using reverse geocoding thanks to this api called nominatim. I need to credit them as well. 
+Should just be a fallback, but I like to be thorough
+*/
 export async function getZipFromCoordinates(
     lat: number,
     lon: number
 ): Promise<string | null> {
     try {
         const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`,
-            {
-                headers: {
-                    "User-Agent": "Cuenta-App/1.0",
-                },
-            }
-        );
-
-        if (!response.ok) return null;
-
-        const data = await response.json();
-        return data.address?.postcode || null;
-    } catch (e) {
-        console.error("Reverse geocoding failed:", e);
-        return null;
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
+    {
+        headers: {
+            "User-Agent": "Cuenta-App/1.0",
+        },
     }
+);
+    
+    if (!response.ok) return null;
+    
+    const data = await response.json();
+    return data.address?.postcode || null;
+} catch {
+    return null;
+    }
+}
+
+export function getAvailableChains(): string[] {
+    const chains = new Set(HOUSTON_STORES.map((store) => store.chain));
+    return Array.from(chains).sort();
+}
+
+export function getStoreCountByChain(): Record<string, number> {
+    const counts: Record<string, number> = {};
+    HOUSTON_STORES.forEach((store) => {
+        counts[store.chain] = (counts[store.chain] || 0) + 1;
+    });
+    return counts;
 }
