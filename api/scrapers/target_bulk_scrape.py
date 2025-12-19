@@ -14,7 +14,7 @@ warnings.filterwarnings('ignore', category=DeprecationWarning)
 import requests
 import urllib3
 urllib3.disable_warnings()
-# supabase
+# supabase imports
 try:
     from supabase import create_client, Client
     from dotenv import load_dotenv
@@ -28,7 +28,6 @@ except ImportError:
 # CONFIGURATION
 # =============================================================================
 
-# High-protein search queries by category
 SEARCH_QUERIES: Dict[str, List[str]] = {
     "meat": ["chicken breast", "ground beef", "ground turkey", "steak", "pork chop", "turkey breast"],
     "seafood": ["salmon", "tuna", "tilapia", "shrimp", "cod"],
@@ -47,6 +46,19 @@ HEADERS = {
 
 session = requests.Session()
 session.headers.update(HEADERS)
+
+# =============================================================================
+# SANITY CHECK CONSTANTS TO ENSURE IT DOESN'T MAX OUT IMMEDIATELY LIKE IT HAS BEEN
+# =============================================================================
+
+# Maximum reasonable values per serving (not per container)
+MAX_PROTEIN_PER_SERVING = 60      # Even a huge steak is ~50g
+MAX_CALORIES_PER_SERVING = 1000   # A whole pizza slice is ~300
+MAX_SERVINGS_PER_CONTAINER = 100  # Protein powder tubs max ~75
+MIN_SERVINGS_PER_CONTAINER = 1
+
+# If protein > this, it's probably a percentage or error
+PROTEIN_PERCENTAGE_THRESHOLD = 50
 
 # =============================================================================
 # DATA CLASSES
@@ -76,27 +88,20 @@ class CuentaProduct:
 
 _api_key_cache: Optional[str] = None
 
-# =============================================================================
-# API KEY MANAGEMENT (FIXED)
-# =============================================================================
-
 def get_api_key() -> str:
     global _api_key_cache
     if _api_key_cache and len(_api_key_cache) == 40:
-            return _api_key_cache
+        return _api_key_cache
         
     fallback_key = '9f36aeafbe60771e321a7cc95a78140772ab3e96'
     
     try:
-        # We hit the main page to find the embedded configuration
         response = requests.get(
             'https://www.target.com/',
             headers=HEADERS,
             timeout=10
         )
         
-        # Target's Redsky key is exactly 40 characters of hex (0-9, a-f)
-        # I'll look for it specifically inside the "apiKey" field
         match = re.search(r'"apiKey":"([a-f0-9]{40})"', response.text)
         if match:
             _api_key_cache = match.group(1)
@@ -108,14 +113,12 @@ def get_api_key() -> str:
     return fallback_key
 
 # =============================================================================
-# TARGET API FUNCTIONS (FIXED PARSING)
+# TARGET API FUNCTIONS
 # =============================================================================
 
 def get_stores_near_zip(zip_code: str, limit: int = 5) -> List[dict]:
-    # 1. HARD-CODED BYPASS FOR YOUR SPECIFIC AREA
     if zip_code == "77021":
         print(f"   Bypassing API: Using known Store ID 1336 for Houston.")
-        # We must nest 'location_id' inside 'location' to match your script's parser
         return [{
             'location': {
                 'location_id': '1336', 
@@ -123,7 +126,6 @@ def get_stores_near_zip(zip_code: str, limit: int = 5) -> List[dict]:
             }
         }]
 
-    # 2. DYNAMIC LOOKUP (If zip is different)
     api_key = get_api_key()
     url = "https://redsky.target.com/redsky_aggregations/v1/web/nearby_stores_v1"
     params = {
@@ -141,15 +143,12 @@ def get_stores_near_zip(zip_code: str, limit: int = 5) -> List[dict]:
     except Exception as e:
         print(f"   Connection Error: {e}")
     
-    # Fallback to 1336 if everything fails
     return [{'location': {'location_id': '1336'}}]
 
 SESSION_VISITOR_ID = str(uuid.uuid4()).replace('-', '').upper()[:32]
 
 def search_products(query: str, store_id: str, count: int = 24):
     api_key = get_api_key()
-    
-    # Target expects the Referer to match the search page
     search_url = f"https://www.target.com/s?searchTerm={query}"
     
     params = {
@@ -164,14 +163,10 @@ def search_products(query: str, store_id: str, count: int = 24):
         'page': f'/s?searchTerm={query}'
     }
 
-    # Spoof the referer for this specific search
     local_headers = {'Referer': search_url}
-
-    # Small delay to mimic human reading speed
     time.sleep(random.uniform(2.0, 4.0)) 
 
     try:
-        # Switching to the aggregations endpoint which is often more permissive
         response = session.get(
             'https://redsky.target.com/redsky_aggregations/v1/web/plp_search_v1',
             params=params,
@@ -227,7 +222,7 @@ def fetch_product_details(tcin: str, store_id: str) -> Optional[dict]:
     return None
 
 # =============================================================================
-# PARSING FUNCTIONS
+# PARSING FUNCTIONS (WITH SANITY CHECKS)
 # =============================================================================
 
 def infer_tags(title: str, category: str, ingredients: str = "") -> Set[str]:
@@ -271,6 +266,87 @@ def infer_category(department: str, category_name: str, title: str) -> str:
     
     return 'other'
 
+def sanitize_servings(raw_servings: Any, product_name: str) -> float:
+
+    if raw_servings is None:
+        return 1.0
+    
+    try:
+        # Handle strings like "About 6-7" (LOLLLLLLLLLLLLLLLLLLLL)
+        spc_str = str(raw_servings)
+        spc_clean = re.sub(r'[^\d.]', '', spc_str)
+        
+        if not spc_clean:
+            return 1.0
+        
+        servings = float(spc_clean)
+        
+        # SANITY CHECK: servings should be between 1 and 100
+        if servings < MIN_SERVINGS_PER_CONTAINER:
+            print(f"  Servings WAYYYYYYYYYYYY too low ({servings}) for {product_name[:30]}, defaulting to 1")
+            return 1.0
+        
+        if servings > MAX_SERVINGS_PER_CONTAINER:
+            print(f"   Servings WAYYYYYY too high ({servings}) for {product_name[:30]}, defaulting to 1")
+            # This is likely calories or some other number misplaced
+            return 1.0
+        
+        return servings
+        
+    except (ValueError, TypeError):
+        return 1.0
+
+
+def sanitize_protein(raw_protein: Any, product_name: str) -> float:
+    if raw_protein is None:
+        return 0.0
+    
+    try:
+        protein = float(raw_protein)
+        
+        # SANITY CHECK: protein per serving shouldn't exceed ~60g
+        if protein > PROTEIN_PERCENTAGE_THRESHOLD:
+            print(f"      ⚠️ Protein suspiciously high ({protein}g) for {product_name[:30]}")
+            
+            # Check if it looks like a percentage first since 83.3 that I was getting in my supabase tables in protein might be 83.3% daily value
+            # Real protein per serving is typically 0-50g
+            if protein > 80:
+                # This bug is almost certainly due to percentage 
+                # Average protein powder: ~25g per serving
+                # This is a rough heuristic that can and will be optimized in a later commit in the next week hopefully 12/18/2025
+                print(f"         → Likely a percentage, estimating ~25g for supplements")
+                return 25.0
+            
+            # For values 50-80, it might be a multi-serving calculation error
+            # This belowww returns it as-is but flags it for review later 
+            return protein
+        
+        return protein
+        
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def sanitize_calories(raw_calories: Any, product_name: str) -> int:
+    if raw_calories is None:
+        return 0
+    
+    try:
+        calories = int(raw_calories)
+        
+        # SANITY CHECK: calories per serving shouldn't exceed ~1500 because unrealistically
+        if calories > MAX_CALORIES_PER_SERVING:
+            print(f" Calories too high ({calories}) for {product_name[:30]}, likely an error")
+            return 0
+        
+        if calories < 0:
+            return 0
+        
+        return calories
+        
+    except (ValueError, TypeError):
+        return 0
+
 def parse_product(raw_data: dict, query_category: str) -> Optional[CuentaProduct]:
     try:
         product = raw_data.get('data', {}).get('product', {})
@@ -296,7 +372,6 @@ def parse_product(raw_data: dict, query_category: str) -> Optional[CuentaProduct
         if isinstance(price, str):
             price = float(re.sub(r'[^\d.]', '', price) or 0)
         
-        # skip if no price good edge case
         if price <= 0:
             return None
         
@@ -304,8 +379,9 @@ def parse_product(raw_data: dict, query_category: str) -> Optional[CuentaProduct
         category_name = product.get('category', {}).get('name', '')
         category = infer_category(department, category_name, title)
         if category == 'other':
-            category = query_category  # usesss the search category as fallback which is a good feature thank you judy for the idea
+            category = query_category # usesss the search category as fallback which is a good feature thank you judy for the idea
         
+
         calories = 0
         protein = 0.0
         fat = 0.0
@@ -327,30 +403,36 @@ def parse_product(raw_data: dict, query_category: str) -> Optional[CuentaProduct
                 if ss:
                     serving_size = f"{ss} {ss_unit}".strip()
                 
-                spc = prep.get('servings_per_container')
-                if spc:
-                    try:
-                        # Handle "About 6-7" type strings
-                        spc_clean = re.sub(r'[^\d.]', '', str(spc))
-                        if spc_clean:
-                            servings = float(spc_clean)
-                    except (ValueError, TypeError):
-                        servings = 1.0
+                # Parse servings with SANITY CHECK
+                raw_spc = prep.get('servings_per_container')
+                servings = sanitize_servings(raw_spc, title)
                 
+                # Parse nutrients with SANITY CHECKS
                 for nutrient in prep.get('nutrients', []):
                     name = nutrient.get('name', '').lower()
                     quantity = nutrient.get('quantity', 0) or 0
                     
+                    if 'daily' in name or 'percent' in name or '%' in str(quantity):
+                        continue
+                    
                     if 'calorie' in name:
-                        calories = int(quantity)
+                        calories = sanitize_calories(quantity, title)
                     elif name == 'protein':
-                        protein = float(quantity)
+                        protein = sanitize_protein(quantity, title)
                     elif 'total fat' in name:
-                        fat = float(quantity)
+                        fat = float(quantity) if quantity else 0
                     elif 'total carbohydrate' in name or 'carbohydrate' in name:
-                        carbs = float(quantity)
+                        carbs = float(quantity) if quantity else 0
                     elif 'fiber' in name:
-                        fiber = float(quantity)
+                        fiber = float(quantity) if quantity else 0
+        
+        # FINAL SANITY CHECK: Cross-validate protein vs calories
+        # Protein has 4 cal/g, so protein * 4 should be <= calories (roughly)
+        if protein > 0 and calories > 0:
+            protein_calories = protein * 4
+            if protein_calories > calories * 1.5:  # Allow some margin
+                print(f"      ⚠️ Protein/calorie mismatch for {title[:30]}: {protein}g protein but only {calories} cal")
+                # This might indicate bad data, but we'll keep it and flag
         
         tags = infer_tags(title, category_name, ingredients)
         
@@ -385,7 +467,7 @@ _supabase_client: Optional[Any] = None
 def get_client() -> Any:
     global _supabase_client
     if _supabase_client is None:
-        url = os.getenv("SUPABASE_URL")
+        url = os.getenv("SUPABASE_URL") #os is not unbound leave me ALONE
         key = os.getenv("SUPABASE_SERVICE_KEY")
         if not url or not key:
             raise ValueError("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY")
@@ -417,7 +499,6 @@ def get_or_create_store(location_id: str, name: str, chain: str, zip_code: str) 
     
     return None
 
-# uploadded all the produicts to the supabase client unless dry run or doesn't need
 def upload_products(products: List[CuentaProduct], store_id: str, dry_run: bool = False) -> Dict[str, int]:
     stats = {"uploaded": 0, "skipped": 0, "errors": 0}
     
@@ -429,6 +510,12 @@ def upload_products(products: List[CuentaProduct], store_id: str, dry_run: bool 
     
     for product in products:
         try:
+            # Calculate derived fields
+            total_protein = product.protein * product.servings
+            protein_per_dollar = total_protein / product.price if product.price > 0 else 0
+            total_calories = product.calories * product.servings
+            protein_per_100cal = (product.protein / product.calories * 100) if product.calories > 0 else 0
+            
             product_data = {
                 "store_id": store_id,
                 "name": product.name[:255],
@@ -440,6 +527,8 @@ def upload_products(products: List[CuentaProduct], store_id: str, dry_run: bool 
                 "fiber": product.fiber,
                 "serving_size": product.serving_size,
                 "servings_per_container": product.servings,
+                "protein_per_dollar": protein_per_dollar,
+                "protein_per_100cal": protein_per_100cal,
                 "category": product.category,
                 "tags": list(product.tags),
                 "barcode": product.barcode,
@@ -479,13 +568,13 @@ def run_bulk_scrape(
         "products_with_nutrition": 0,
         "products_uploaded": 0,
         "errors": 0,
+        "warnings": 0, # lets see
     }
     
     print("\n1. Getting API key...")
     api_key = get_api_key()
     print(f"   Key: {api_key[:20]}...")
     
-    # Find store
     print(f"\n2. Finding Target stores near {zip_code}...")
     stores = get_stores_near_zip(zip_code)
     
@@ -493,7 +582,6 @@ def run_bulk_scrape(
         print("   No stores found!")
         return results
     
-# Target sometimes puts the data inside a 'store' key, sometimes directly
     first_store = stores[0]
     store_id = first_store.get('store_id') or first_store.get('location', {}).get('location_id')
     store_name = first_store.get('store_name') or first_store.get('location', {}).get('location_name', 'Unknown')
@@ -512,7 +600,7 @@ def run_bulk_scrape(
             db_store_id = get_or_create_store(store_id, f"Target - {store_name}", "Target", zip_code)
             print(f"  Store ID: {db_store_id}")
         except Exception as e:
-            print(f"  ❌ Supabase error: {e}")
+            print(f"   Supabase error: {e}")
     
     if categories:
         search_categories = {k: v for k, v in SEARCH_QUERIES.items() if k in categories}
@@ -522,7 +610,7 @@ def run_bulk_scrape(
     all_products: List[CuentaProduct] = []
     seen_tcins: Set[str] = set()
     
-    print(f"\n4. Scraping products...")
+    print(f"\n4. Scraping products (with sanity checks enabled)...")
     
     for category, queries in search_categories.items():
         print(f"\n  {category.upper()}")
@@ -543,7 +631,6 @@ def run_bulk_scrape(
                     
                     seen_tcins.add(tcin)
                     
-                    # Fetch full details (includes nutrition)
                     raw_data = fetch_product_details(tcin, store_id)
                     if not raw_data:
                         continue
@@ -566,7 +653,7 @@ def run_bulk_scrape(
                 results["errors"] += 1
             
             time.sleep(0.5)  # I AM A REAL BOY!!!!!!!!!!!!!!!!!!!!!
-    # upload all products iinally
+    
     if all_products:
         print(f"\n5. Uploading {len(all_products)} products...")
         
@@ -574,7 +661,7 @@ def run_bulk_scrape(
             print("   (Dry run - showing sample)")
             for p in all_products[:10]:
                 status = "✓" if p.protein > 0 else "○"
-                print(f"   {status} {p.name[:45]}... ${p.price:.2f} | {p.calories}cal | {p.protein}g")
+                print(f"   {status} {p.name[:45]}... ${p.price:.2f} | {p.calories}cal | {p.protein}g | {p.servings} servings") # satan numbers
             if len(all_products) > 10:
                 print(f"   ... and {len(all_products) - 10} more")
             results["products_uploaded"] = 0

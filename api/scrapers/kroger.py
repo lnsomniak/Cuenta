@@ -19,14 +19,12 @@ KROGER_CLIENT_ID = os.getenv("KROGER_CLIENT_ID")
 KROGER_CLIENT_SECRET = os.getenv("KROGER_CLIENT_SECRET")
 KROGER_API_BASE = "https://api.kroger.com/v1"
 
-from typing import Optional, Dict, Any
 _token_cache: Dict[str, Any] = {
     "access_token": None,
     "expires_at": None
 }
 
 # Nutrition fallback for missing data
-enrich_product_nutrition: Optional[Callable] = None
 try:
     from nutrition_fallback import enrich_product, lookup_nutrition_smart
     HAS_FALLBACK = True
@@ -34,9 +32,17 @@ except ImportError:
     HAS_FALLBACK = False
 
 # =============================================================================
-# AUTH
+# SANITY CHECK CONSTANTS
 # =============================================================================
 
+MAX_SERVINGS_PER_CONTAINER = 50  
+MIN_SERVINGS_PER_CONTAINER = 1
+MAX_PROTEIN_PER_SERVING = 60 
+MAX_TOTAL_PROTEIN = 500        
+
+# =============================================================================
+# AUTH
+# =================================================================================
 #  this should get OAuth2 access tokens using client_credentials grant
 def get_access_token() -> str:
     global _token_cache
@@ -194,6 +200,105 @@ def infer_category(categories: Optional[List[str]]) -> str:
     return 'other'
 
 # =============================================================================
+# SANITY CHECK FUNCTIONS THATTT i forgot to import into here because why would I do that?
+# =============================================================================
+
+def sanitize_servings(raw_value: Any, product_name: str) -> float:
+    if raw_value is None:
+        return 1.0
+    # i'm putting 5 fail safes here, i'm tired of this not scraping correctly thing so i'll implement these now and reuse later. 
+    raw_str = str(raw_value).lower().strip()
+    
+    # If empty, default to 1
+    if not raw_str:
+        return 1.0
+    
+    # 1: Look for "about X" pattern first
+    about_match = re.search(r'about\s+(\d+(?:\.\d+)?)', raw_str)
+    if about_match:
+        servings = float(about_match.group(1))
+        if MIN_SERVINGS_PER_CONTAINER <= servings <= MAX_SERVINGS_PER_CONTAINER:
+            return servings
+    
+    # 3:Look for a small number at the START of the string
+    # This avoids grabbing "112" from "4 oz (112g)"
+    start_match = re.match(r'^(\d+(?:\.\d+)?)', raw_str)
+    if start_match:
+        servings = float(start_match.group(1))
+        if MIN_SERVINGS_PER_CONTAINER <= servings <= MAX_SERVINGS_PER_CONTAINER:
+            return servings
+    
+    # 3: If the whole thing is just a number
+    try:
+        servings = float(raw_str)
+        if MIN_SERVINGS_PER_CONTAINER <= servings <= MAX_SERVINGS_PER_CONTAINER:
+            return servings
+    except ValueError:
+        pass
+    
+    #4: Extract ALL numbers and pick the smallest reasonable one
+    all_numbers = re.findall(r'(\d+(?:\.\d+)?)', raw_str)
+    if all_numbers:
+        candidates = [float(n) for n in all_numbers if 1 <= float(n) <= MAX_SERVINGS_PER_CONTAINER]
+        if candidates:
+            # Pick the smallest reasonable number (most likely the serving count, not grams)
+            return min(candidates)
+    
+    # If all else fails, check if value is suspiciously high
+    try:
+        parsed = float(re.sub(r'[^\d.]', '', raw_str) or '1')
+        if parsed > MAX_SERVINGS_PER_CONTAINER:
+            print(f"  Servings too high ({parsed}) for {product_name[:30]}, defaulting to 1")
+            return 1.0
+        return parsed
+    except:
+        return 1.0
+
+
+def sanitize_protein(raw_value: Any, product_name: str) -> float:
+    if raw_value is None:
+        return 0.0
+    
+    try:
+        protein = float(raw_value)
+        
+        if protein > MAX_PROTEIN_PER_SERVING:
+            print(f"  Protein per serving too high ({protein}g) for {product_name[:30]}")
+            if protein > 80:
+                return 25.0  # Estimate for supplements
+            return protein
+        
+        return protein
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def validate_total_protein(protein_per_serving: float, servings: float, product_name: str) -> tuple:
+    total = protein_per_serving * servings
+    
+    if total > MAX_TOTAL_PROTEIN:
+        print(f" Total protein impossibly high ({total:.0f}g) for {product_name[:30]}")
+        
+        # If servings looks like it grabbed grams (e.g., 112 instead of 4)
+        if servings > 20 and protein_per_serving < 50:
+            # This should estimate reasonable servings based on typical packages i've researched online while I was building the hardcoded fallback store database 
+            # Most meat packages have 4-6 servings
+            estimated_servings = 4.0
+            print(f"         → Adjusting servings from {servings} to {estimated_servings}")
+            return (protein_per_serving, estimated_servings)
+        
+        # If protein per serving is too high, it might be total protein mislabeled
+        if protein_per_serving > 50:
+            # Try dividing by servings to get per-serving value
+            adjusted_protein = protein_per_serving / servings if servings > 1 else protein_per_serving
+            if adjusted_protein < 50:
+                print(f"         → Adjusting protein from {protein_per_serving}g to {adjusted_protein:.1f}g per serving")
+                return (adjusted_protein, servings)
+    
+    return (protein_per_serving, servings)
+
+
+# =============================================================================
 # LOCATIONS API
 # =============================================================================
 
@@ -321,13 +426,11 @@ def parse_to_cuenta_product(
             nutrition = item.get("nutrition", {})
             
             # Serving info
-            serving_size = nutrition.get("servingSize", "1 serving") or "1 serving"
-            servings_str = nutrition.get("servingsPerContainer", "1") 
-            if servings_str:
-                servings_clean = re.sub(r'[^\d.]', '', str(servings_str))
-                if servings_clean:
-                    servings = float(servings_clean)
-            
+            raw_serving_size = nutrition.get("servingSize", "1 serving")
+            serving_size = raw_serving_size if raw_serving_size else "1 serving" 
+            raw_servings = nutrition.get("servingsPerContainer", "1")
+            servings = sanitize_servings(raw_servings, name)
+            # ensures it parses correctly 
             # Nutrients
             nutrients = nutrition.get("nutrients", [])
             for n in nutrients:
@@ -344,6 +447,8 @@ def parse_to_cuenta_product(
                     carbs = float(amount)
                 elif "fiber" in nutrient_name:
                     fiber = float(amount)
+        # final test 
+        protein, servings = validate_total_protein(protein, servings, name)
         
         # Image
         images = product_data.get("images", [])
@@ -404,10 +509,7 @@ def search_and_parse(
         product = parse_to_cuenta_product(raw, location_id)
         if not product:
             continue
-            #if enrich and HAS_FALLBACK and (product.calories == 0 or product.protein == 0):
-            #    enrich_product(product)
-                    # Enrich with USDA nutrition if available and needed
-        # if you can't tell, this is a fix still written in because I'm not sure this works below
+        
         if enrich and HAS_FALLBACK and (product.calories == 0 or product.protein == 0):
             nutrition = lookup_nutrition_smart(product.name, product.upc)
             if nutrition:
@@ -502,13 +604,6 @@ if __name__ == "__main__":
             
     except Exception as e:
         print(f"   ✗ Error: {e}")
-    
-    # Export sample
-    if products:
-        print("\n" + "=" * 60)
-        print("EXPORT FOR SERVER.PY")
-        print("=" * 60)
-        print(export_for_server(products[:3]))
     
     print("\n" + "=" * 60)
     print("Done!")
